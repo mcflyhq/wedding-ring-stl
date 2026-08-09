@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg'
 import { getBlankBandGeometry } from './buildCache'
 import { buildTextLayout, engraveByDisplacement } from './textEngraving'
 import type { RingParams } from './types'
@@ -16,8 +17,8 @@ export interface BuiltRing {
 
 export interface BuildOptions {
   /**
-   * `preview` — interactive edits: draft quality for speed.
-   * `final` — idle / export quality.
+   * `preview` — draft quality, skip expensive date CSG.
+   * `final` — full quality + solid date CSG cavities.
    */
   mode?: 'preview' | 'final'
   /** Override mesh quality (used for live draft while dragging). */
@@ -43,9 +44,9 @@ function metalMaterial(params: RingParams, clipped: THREE.Plane | null): THREE.M
 function inkMaterial(clipped: THREE.Plane | null): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
     color: 0x1c140a,
-    metalness: 0.4,
-    roughness: 0.45,
-    envMapIntensity: 0.5,
+    metalness: 0.35,
+    roughness: 0.5,
+    envMapIntensity: 0.4,
     side: THREE.DoubleSide,
     flatShading: false,
     clippingPlanes: clipped ? [clipped] : [],
@@ -70,8 +71,46 @@ function makeCutawayPlane(params: RingParams): THREE.Plane | null {
   return new THREE.Plane(new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0), 0)
 }
 
+/**
+ * CSG-subtract solid date digits from the band → full solid cavities.
+ * Must run on a correctly wound solid (see ringGeometry profile winding).
+ */
+function carveDateWithCsg(
+  bandGeom: THREE.BufferGeometry,
+  cutter: THREE.BufferGeometry,
+): THREE.BufferGeometry {
+  try {
+    const ringClone = bandGeom.clone()
+    const cutClone = cutter.clone()
+    ringClone.computeVertexNormals()
+    cutClone.computeVertexNormals()
+
+    const ringBrush = new Brush(ringClone)
+    ringBrush.updateMatrixWorld(true)
+    ringBrush.prepareGeometry()
+
+    const cutBrush = new Brush(cutClone)
+    cutBrush.updateMatrixWorld(true)
+    cutBrush.prepareGeometry()
+
+    const evaluator = new Evaluator()
+    evaluator.useGroups = false
+    const result = evaluator.evaluate(ringBrush, cutBrush, SUBTRACTION)
+    const out = result.geometry
+    out.computeVertexNormals()
+
+    ringClone.dispose()
+    cutClone.dispose()
+    return out
+  } catch (err) {
+    console.warn('Date CSG carve failed — falling back to displacement only', err)
+    return bandGeom
+  }
+}
+
 function disposeLayout(layout: Awaited<ReturnType<typeof buildTextLayout>>): void {
   if (!layout) return
+  layout.dateCutter?.dispose()
   for (const g of layout.previewGeometries) g.dispose()
 }
 
@@ -88,8 +127,12 @@ export function disposeBuiltRing(built: BuiltRing): void {
 
 /**
  * Build ring + inscription.
- * All text (Tengwar, date, Latin) is recessed into the metal via vertex
- * displacement — same carve style, never embossed solids into the hole.
+ *
+ * Order (critical for performance + ink-off visibility):
+ * 1. Displacement on the **clean lathe** for ALL text including date
+ *    → recesses exist even when ink is hidden
+ * 2. Date CSG after that for solid full-digit cavities (always when date present)
+ *    → densifies only after Tengwar displacement finishes
  */
 export async function buildRing(
   params: RingParams,
@@ -116,7 +159,8 @@ export async function buildRing(
     await yieldToMain()
     throwIfCancelled(isCancelled)
 
-    // Recess all inscriptions into the band (inner wall → outward into metal)
+    // 1) Displacement FIRST — Tengwar + date (date must leave metal recesses
+    //    so the engraving is visible with ink fill turned OFF)
     if (layout && layout.polys.length > 0) {
       const next = await engraveByDisplacement(
         bandGeom,
@@ -128,6 +172,22 @@ export async function buildRing(
         bandGeom.dispose()
         bandGeom = next
       }
+    }
+
+    throwIfCancelled(isCancelled)
+
+    // 2) Solid date CSG — full digit cavities (mesh-density independent).
+    //    Always when a date cutter exists (preview uses draft lathe → fast enough).
+    if (layout?.dateCutter) {
+      await yieldToMain()
+      throwIfCancelled(isCancelled)
+      const carved = carveDateWithCsg(bandGeom, layout.dateCutter)
+      if (carved !== bandGeom) {
+        bandGeom.dispose()
+        bandGeom = carved
+      }
+      layout.dateCutter.dispose()
+      layout.dateCutter = null
     }
 
     throwIfCancelled(isCancelled)

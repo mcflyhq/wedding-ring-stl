@@ -381,17 +381,23 @@ async function runBuild(nextParams: RingParams, mode: 'preview' | 'final') {
   updateGoldEstimate()
   updateDimLabels()
 
+  // Preview must stay snappy; final may include date CSG (a few seconds on High).
+  // Only toast — do not flip `building` while work may still finish (avoids stuck state).
+  const safetyMs = mode === 'preview' ? 20000 : 90000
   const safety = window.setTimeout(() => {
     if (building && buildGeneration === gen) {
-      building = false
-      setBuildBusy(false)
-      setLoading(false, true)
       if (isInitialLoad) {
-        setLoadingCopy('Still working…', 'Try Draft quality if this keeps hanging')
+        setLoadingCopy('Still working…', 'High quality + date carve can take a moment')
       }
-      toast('Build timed out — try Draft or Normal quality', true)
+      setBuildBusy(true, mode === 'final' ? 'Carving date (CSG)…' : 'Still building…')
+      toast(
+        mode === 'final'
+          ? 'Still refining — High + date CSG can take a few seconds'
+          : 'Preview is slow — try Draft quality',
+        false,
+      )
     }
-  }, 45000)
+  }, safetyMs)
 
   try {
     const qualityOverride =

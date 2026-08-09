@@ -20,9 +20,6 @@ const EXTRUDE_CURVE_SEGMENTS = 16
 /** Outline sampling for displacement masks. */
 const POLY_DIVISIONS = 48
 const POLY_HOLE_DIVISIONS = 24
-/** Denser sampling for date digits so thin strokes hit the lathe mesh. */
-const DATE_POLY_DIVISIONS = 72
-const DATE_HOLE_DIVISIONS = 36
 
 async function loadFontFromPath(path: string): Promise<Font> {
   const cached = fontCache.get(path)
@@ -141,11 +138,34 @@ function pointInPoly(point: THREE.Vector2, poly: FlatPoly): boolean {
   return true
 }
 
+/** Multi-sample point-in-poly so thin digit strokes still hit lathe vertices. */
+function hitPolySoft(
+  arc: number,
+  y: number,
+  poly: FlatPoly,
+  sample: THREE.Vector2,
+  softMm: number,
+): boolean {
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      sample.set(arc + dx * softMm, y + dy * softMm)
+      if (pointInPoly(sample, poly)) return true
+    }
+  }
+  return false
+}
+
 export interface TextLayout {
-  /** Displacement masks for recessed engraving (all faces). */
+  /** Displacement masks (Tengwar / long runs). Date uses CSG instead. */
   polys: FlatPoly[]
   /** Ink fill meshes sitting inside the recesses. */
   previewGeometries: THREE.BufferGeometry[]
+  /**
+   * Solid letter cutter for the Latin date (inner face only).
+   * CSG-subtracted from the band for full solid cavities — displacement cannot
+   * resolve thin Inter strokes on a lathe mesh.
+   */
+  dateCutter: THREE.BufferGeometry | null
   sizeMm: number
   depthMm: number
   transcribedPreview?: string
@@ -159,7 +179,7 @@ interface SurfaceJob {
   sizeMm: number
   font: Font | Promise<Font>
   keysOverride?: string
-  /** Date / Inter digits */
+  /** Date / Inter digits — solid CSG carve + ink */
   latinSafe?: boolean
 }
 
@@ -188,47 +208,11 @@ function pathsForLatinRun(font: Font, text: string, sizeMm: number): Path[] {
 }
 
 /**
- * Offset a closed polygon along edge normals (more stable than centroid scale).
- * Positive amount expands; negative shrinks.
- */
-function offsetPolygon(pts: THREE.Vector2[], amount: number): THREE.Vector2[] {
-  if (pts.length < 3 || Math.abs(amount) < 1e-9) return pts
-  const n = pts.length
-  const out: THREE.Vector2[] = []
-  const area = signedArea(pts)
-  const sign = area >= 0 ? 1 : -1 // expand outward relative to winding
-
-  for (let i = 0; i < n; i++) {
-    const prev = pts[(i - 1 + n) % n]!
-    const cur = pts[i]!
-    const next = pts[(i + 1) % n]!
-    const e1x = cur.x - prev.x
-    const e1y = cur.y - prev.y
-    const e2x = next.x - cur.x
-    const e2y = next.y - cur.y
-    const l1 = Math.hypot(e1x, e1y) || 1
-    const l2 = Math.hypot(e2x, e2y) || 1
-    // Outward normals (perp of edges, oriented by winding)
-    const n1x = (sign * -e1y) / l1
-    const n1y = (sign * e1x) / l1
-    const n2x = (sign * -e2y) / l2
-    const n2y = (sign * e2x) / l2
-    let nx = n1x + n2x
-    let ny = n1y + n2y
-    const nl = Math.hypot(nx, ny) || 1
-    nx /= nl
-    ny /= nl
-    // miter limit
-    const dot = Math.max(-0.99, Math.min(0.99, n1x * nx + n1y * ny))
-    const miter = Math.min(4, 1 / Math.max(0.2, dot))
-    out.push(new THREE.Vector2(cur.x + nx * amount * miter, cur.y + ny * amount * miter))
-  }
-  return out
-}
-
-/**
  * Layout a single text run onto the ring.
  * Glyph coords are centered (working placement from earlier versions).
+ *
+ * Date (latinSafe): solid CSG cutter + ink only — no displacement polys.
+ * Thin Inter strokes cannot be resolved by vertex displacement on a lathe mesh.
  */
 function layoutTextRun(
   font: Font,
@@ -245,11 +229,12 @@ function layoutTextRun(
 ): {
   polys: FlatPoly[]
   previews: THREE.BufferGeometry[]
+  cutter: THREE.BufferGeometry | null
   encoded: string
   widthMm: number
 } {
   const encoded = resolveInscriptionText(rawText, keysOverride ?? '')
-  if (!encoded) return { polys: [], previews: [], encoded: '', widthMm: 0 }
+  if (!encoded) return { polys: [], previews: [], cutter: null, encoded: '', widthMm: 0 }
 
   let paths: Path[]
   if (latinSafe) {
@@ -274,7 +259,7 @@ function layoutTextRun(
     minY = Math.min(minY, bb.y1)
     maxY = Math.max(maxY, bb.y2)
   }
-  if (!Number.isFinite(minX)) return { polys: [], previews: [], encoded, widthMm: 0 }
+  if (!Number.isFinite(minX)) return { polys: [], previews: [], cutter: null, encoded, widthMm: 0 }
 
   // Center run at origin — same as the versions where date carved correctly
   const cx = (minX + maxX) / 2
@@ -283,38 +268,39 @@ function layoutTextRun(
 
   const polys: FlatPoly[] = []
   const previews: THREE.BufferGeometry[] = []
+  const cutterParts: THREE.BufferGeometry[] = []
 
-  const extrudeDepth = Math.max(depthMm * 0.85, latinSafe ? 0.3 : 0.22)
-  const maskPad = latinSafe ? 0.08 : 0
-  const curveSegs = latinSafe ? 20 : EXTRUDE_CURVE_SEGMENTS
-  const polyDiv = latinSafe ? DATE_POLY_DIVISIONS : POLY_DIVISIONS
-  const holeDiv = latinSafe ? DATE_HOLE_DIVISIONS : POLY_HOLE_DIVISIONS
+  // Date needs a thick solid for CSG; ink extrude stays inside the pocket
+  const inkDepth = Math.max(depthMm * 0.85, latinSafe ? 0.32 : 0.22)
+  const cutterDepth = Math.max(depthMm + 0.25, 0.55)
+  const curveSegs = latinSafe ? 24 : EXTRUDE_CURVE_SEGMENTS
+  const polyDiv = POLY_DIVISIONS
+  const holeDiv = POLY_HOLE_DIVISIONS
 
   for (const path of paths) {
     if (!path.commands.length) continue
     const shapes = pathToShapes(path)
     if (shapes.length === 0) continue
 
-    const geom = new THREE.ExtrudeGeometry(shapes, {
-      depth: extrudeDepth,
+    // --- Ink solid (preview + visual fill) — entirely inside metal ---
+    const inkGeom = new THREE.ExtrudeGeometry(shapes, {
+      depth: inkDepth,
       bevelEnabled: false,
       curveSegments: curveSegs,
       steps: 1,
     })
-    geom.translate(-cx, -cy, 0)
+    inkGeom.translate(-cx, -cy, 0)
+    previews.push(bendOntoSurface(inkGeom, radius, angleRad, surface, depthMm, dome))
+    inkGeom.dispose()
 
-    // Recessed ink fully inside metal pocket (same as Tengwar)
-    const bent = bendOntoSurface(geom, radius, angleRad, surface, depthMm, dome)
-    previews.push(bent)
-
+    // Displacement masks (used for preview; skipped when final CSG runs on date)
     for (const shape of shapes) {
-      let outer = shape.getPoints(polyDiv).map((p) => new THREE.Vector2(p.x - cx, p.y - cy))
-      if (maskPad > 0) outer = offsetPolygon(outer, maskPad)
-      const holes = shape.holes.map((h) => {
-        let pts = h.getPoints(holeDiv).map((p) => new THREE.Vector2(p.x - cx, p.y - cy))
-        if (maskPad > 0) pts = offsetPolygon(pts, -maskPad * 0.5)
-        return pts
-      })
+      const outer = shape
+        .getPoints(latinSafe ? 64 : polyDiv)
+        .map((p) => new THREE.Vector2(p.x - cx, p.y - cy))
+      const holes = shape.holes.map((h) =>
+        h.getPoints(latinSafe ? 32 : holeDiv).map((p) => new THREE.Vector2(p.x - cx, p.y - cy)),
+      )
       polys.push({
         outer,
         holes,
@@ -323,10 +309,31 @@ function layoutTextRun(
       })
     }
 
-    geom.dispose()
+    if (latinSafe && surface === 'inner') {
+      // CSG cutter for final builds — full solid cavities independent of mesh density
+      const cutGeom = new THREE.ExtrudeGeometry(shapes, {
+        depth: cutterDepth,
+        bevelEnabled: false,
+        curveSegments: Math.min(curveSegs, 12), // lighter cutter for faster CSG
+        steps: 1,
+      })
+      cutGeom.translate(-cx, -cy, 0)
+      cutterParts.push(bendDateCutter(cutGeom, radius, angleRad, depthMm))
+      cutGeom.dispose()
+    }
   }
 
-  return { polys, previews, encoded, widthMm }
+  let cutter: THREE.BufferGeometry | null = null
+  if (cutterParts.length > 0) {
+    const merged = mergeGeometries(cutterParts, false)
+    for (const g of cutterParts) g.dispose()
+    if (merged) {
+      merged.computeVertexNormals()
+      cutter = merged
+    }
+  }
+
+  return { polys, previews, cutter, encoded, widthMm }
 }
 
 /**
@@ -399,6 +406,7 @@ export async function buildTextLayout(params: RingParams): Promise<TextLayout | 
 
   const polys: FlatPoly[] = []
   const previewGeometries: THREE.BufferGeometry[] = []
+  let dateCutter: THREE.BufferGeometry | null = null
   let transcribedPreview: string | undefined
 
   for (const job of jobs) {
@@ -419,13 +427,17 @@ export async function buildTextLayout(params: RingParams): Promise<TextLayout | 
     )
     polys.push(...result.polys)
     previewGeometries.push(...result.previews)
+    if (result.cutter) {
+      if (dateCutter) dateCutter.dispose()
+      dateCutter = result.cutter
+    }
     if (job.surface === 'inner' && !isDate && result.encoded) {
       transcribedPreview = result.encoded
     }
   }
 
-  if (polys.length === 0 && previewGeometries.length === 0) return null
-  return { polys, previewGeometries, sizeMm, depthMm, transcribedPreview }
+  if (polys.length === 0 && previewGeometries.length === 0 && !dateCutter) return null
+  return { polys, previewGeometries, dateCutter, sizeMm, depthMm, transcribedPreview }
 }
 
 /**
@@ -473,7 +485,7 @@ function bendOntoSurface(
   const zMax = geom.boundingBox!.max.z
   const extrude = Math.max(zMax - zMin, 0.1)
   const depth = Math.max(pocketDepth, 0.22)
-  const insetFront = 0.05
+  const insetFront = 0.06
   const floor = depth
 
   for (let i = 0; i < pos.count; i++) {
@@ -496,6 +508,44 @@ function bendOntoSurface(
       const zOut = zAx - along * uz
       pos.setXYZ(i, cosA * r, sinA * r, zOut)
     }
+  }
+
+  pos.needsUpdate = true
+  geom.computeVertexNormals()
+  return geom
+}
+
+/**
+ * Bend a solid date glyph into a CSG cutter that crosses the inner wall.
+ * Front (glyph face) peeks slightly into the hole so subtraction opens a cavity;
+ * back sits deep in the metal. Result: recessed digits, not embossed blocks.
+ */
+function bendDateCutter(
+  geometry: THREE.BufferGeometry,
+  radius: number,
+  startAngleRad: number,
+  pocketDepth: number,
+): THREE.BufferGeometry {
+  const geom = geometry.clone()
+  const pos = geom.attributes.position as THREE.BufferAttribute
+  const v = new THREE.Vector3()
+  geom.computeBoundingBox()
+  const zMin = geom.boundingBox!.min.z
+  const zMax = geom.boundingBox!.max.z
+  const extrude = Math.max(zMax - zMin, 0.1)
+  const depth = Math.max(pocketDepth, 0.3)
+  // Small overshoot into the hole so the free surface is opened by CSG
+  const intoHole = 0.1
+  const intoMetal = depth + 0.12
+
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i)
+    const angle = layoutXToWorldAngle(v.x, radius, startAngleRad, 'inner')
+    const t = (v.z - zMin) / extrude // 0 glyph face → 1 extruded back
+    // t=0 at free side (into hole), t=1 deep in metal
+    const along = -intoHole + t * (intoMetal + intoHole)
+    const radial = radius + along
+    pos.setXYZ(i, Math.cos(angle) * radial, Math.sin(angle) * radial, v.y)
   }
 
   pos.needsUpdate = true
@@ -557,13 +607,14 @@ export async function engraveByDisplacement(
 
     const theta = Math.atan2(v.y, v.x)
 
-    // Match working bend: inner uses (ref − θ)·r, outer (θ − ref)·r, with wrap
+    // Match working bend: inner uses (ref − θ)·r, outer (θ − ref)·r, with wrap.
+    // Soft multi-sample catches thin Inter date strokes between mesh vertices.
     if (innerPolys.length && r >= innerRMin && r <= innerRMax) {
       let hit = false
       for (const poly of innerPolys) {
         const angle = baseAngle + poly.angleOffsetRad
-        sample.set(wrappedArcMm(theta, angle, innerR, true), v.z)
-        if (pointInPoly(sample, poly)) {
+        const a0 = wrappedArcMm(theta, angle, innerR, true)
+        if (hitPolySoft(a0, v.z, poly, sample, 0.06)) {
           hit = true
           break
         }
@@ -587,8 +638,8 @@ export async function engraveByDisplacement(
       let hit = false
       for (const poly of outerPolys) {
         const angle = baseAngle + poly.angleOffsetRad
-        sample.set(wrappedArcMm(theta, angle, outerR, false), v.z)
-        if (pointInPoly(sample, poly)) {
+        const a0 = wrappedArcMm(theta, angle, outerR, false)
+        if (hitPolySoft(a0, v.z, poly, sample, 0.05)) {
           hit = true
           break
         }

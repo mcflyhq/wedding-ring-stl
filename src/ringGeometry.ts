@@ -31,6 +31,10 @@ function innerWallSteps(quality: RingParams['quality'], width: number): number {
 /**
  * Domed (D-shape) wedding-band cross-section for LatheGeometry.
  * x = radius, y = height along finger axis.
+ *
+ * Winding is critical for CSG: walk so the **metal** lies to the left of the
+ * path (CCW around the solid). Wrong winding inverts the solid and makes
+ * date boolean engraving carve the void instead of the band.
  */
 function buildDomedProfile(
   innerR: number,
@@ -41,24 +45,24 @@ function buildDomedProfile(
   const halfW = width / 2
   const points: THREE.Vector2[] = []
 
-  // Dense flat inner wall (bottom → top)
-  const steps = innerWallSteps(quality, width)
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps
-    points.push(new THREE.Vector2(innerR, -halfW + t * width))
-  }
-
-  // Outer semi-ellipse: rx = thickness, ry = halfW
+  // Outer semi-ellipse bottom → top (ang -π/2 → +π/2)
   const arcSteps = Math.max(
     48,
     Math.ceil(Math.PI * Math.max(thickness, halfW) * (quality === 'high' ? 20 : 12)),
   )
-  for (let i = 1; i <= arcSteps; i++) {
+  for (let i = 0; i <= arcSteps; i++) {
     const t = i / arcSteps
-    const ang = Math.PI / 2 - t * Math.PI
+    const ang = -Math.PI / 2 + t * Math.PI
     const x = innerR + thickness * Math.cos(ang)
     const y = halfW * Math.sin(ang)
     points.push(new THREE.Vector2(Math.max(x, 1e-4), y))
+  }
+
+  // Dense flat inner wall (top → bottom) so metal stays to the left of travel
+  const steps = innerWallSteps(quality, width)
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps
+    points.push(new THREE.Vector2(innerR, halfW - t * width))
   }
 
   return points
