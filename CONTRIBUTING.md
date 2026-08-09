@@ -18,7 +18,7 @@ Please read the [Code of Conduct](./CODE_OF_CONDUCT.md).
 **Requirements:** Node.js 20+ (LTS recommended), npm 10+.
 
 ```bash
-git clone https://github.com/<your-org-or-user>/wedding-ring-stl.git
+git clone https://github.com/mcflyhq/wedding-ring-stl.git
 cd wedding-ring-stl
 npm install
 npm run dev

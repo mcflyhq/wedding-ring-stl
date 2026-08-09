@@ -20,7 +20,7 @@
 **Requirements:** [Node.js](https://nodejs.org/) **20+** and npm 10+.
 
 ```bash
-git clone https://github.com/OWNER/wedding-ring-stl.git
+git clone https://github.com/mcflyhq/wedding-ring-stl.git
 cd wedding-ring-stl
 npm install
 npm run dev
@@ -74,7 +74,7 @@ wedding-ring-stl/
 We welcome issues and pull requests. Start here:
 
 1. [CONTRIBUTING.md](./CONTRIBUTING.md) — setup, style, PR checklist  
-2. [Bug report](../../issues/new?template=bug_report.yml) / [Feature request](../../issues/new?template=feature_request.yml)  
+2. [Bug report](https://github.com/mcflyhq/wedding-ring-stl/issues/new?template=bug_report.yml) / [Feature request](https://github.com/mcflyhq/wedding-ring-stl/issues/new?template=feature_request.yml)  
 3. [Code of Conduct](./CODE_OF_CONDUCT.md)
 
 ```bash
@@ -105,7 +105,5 @@ This project is **not** affiliated with the Tolkien Estate, Middle-earth Enterpr
 
 ## Maintainers
 
-Replace this section with your GitHub org/user after pushing:
-
-- **Repository:** `https://github.com/OWNER/wedding-ring-stl`  
-- **Issues:** use GitHub Issues templates in this repo
+- **Repository:** [mcflyhq/wedding-ring-stl](https://github.com/mcflyhq/wedding-ring-stl)
+- **Issues:** [GitHub Issues](https://github.com/mcflyhq/wedding-ring-stl/issues)

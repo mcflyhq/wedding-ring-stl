@@ -17,12 +17,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OWNER/wedding-ring-stl.git"
+    "url": "git+https://github.com/mcflyhq/wedding-ring-stl.git"
   },
   "bugs": {
-    "url": "https://github.com/OWNER/wedding-ring-stl/issues"
+    "url": "https://github.com/mcflyhq/wedding-ring-stl/issues"
   },
-  "homepage": "https://github.com/OWNER/wedding-ring-stl#readme",
+  "homepage": "https://github.com/mcflyhq/wedding-ring-stl#readme",
   "engines": {
     "node": ">=20"
   },
