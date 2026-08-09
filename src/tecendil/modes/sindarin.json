@@ -1,0 +1,285 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+{
+  
+  "name": "sindarin",
+  "languageCode": "sjn", 
+
+  "normalizeVowels": true,
+
+  "suppressIntrawordDash": true,
+
+  "tehtarFollow": true,
+
+  "preprocess": {
+    
+    "œ": "oe",
+    "æ": "ae",
+
+    
+    "qu": "q",
+
+    
+    "-": " ",
+    "/(\\w)\\.(\\w)/": "$1·$2",
+    "/, /": " , ",
+    "/\\./": " ."
+  },
+
+  "map": {
+    
+    
+    
+    
+
+    "y": "[double-dot-above]",
+
+    
+    "â": "[triple-dot-above]{aara}",
+    "ê": "[acute]{aara}",
+    "î": "[dot-above]{aara}",
+    "ô": "[right-curl]{aara}",
+    "û": "[left-curl]{aara}",
+    "ŷ": "[double-dot-above]{aara}",
+
+    
+    
+    
+    
+    "ae": "[triple-dot-above]{yanta}",
+    "ai": "[triple-dot-above]{anna}",
+    "au": "[triple-dot-above]{vala}",
+    "oe": "[right-curl]{yanta}",
+    "ei": "[acute]{anna}",
+    "ui": "[left-curl]{anna}",
+    "aw": "[triple-dot-above]{vala}",
+
+    
+    "^ia": "{yanta}[triple-dot-above]", 
+    "^ie": "{yanta}[acute]", 
+    "^io": "{yanta}[right-curl]", 
+    "^iu": "{yanta}[left-curl]", 
+    "^iâ": "{yanta}[triple-dot-above]{aara}", 
+    "^iê": "{yanta}[acute]{aara}",
+    "^iô": "{yanta}[right-curl]{aara}",
+    "^iû": "{yanta}[left-curl]{aara}", 
+    
+    "^iae": "{yanta}[triple-dot-above]{yanta}", 
+    "^iai": "{yanta}[triple-dot-above]{anna}", 
+    "^iau": "{yanta}[triple-dot-above]{vala}", 
+    "^ioe": "{yanta}[right-curl]{yanta}", 
+    "^iei": "{yanta}[acute]{anna}", 
+    "^iui": "{yanta}[left-curl]{anna}", 
+
+    "ia-$": "[dot-above]{telco}[triple-dot-above]{telco}{dash}", 
+
+    
+    
+    
+    
+
+    "b": "{umbar}",
+    "bh": "{ampa}",
+    "c": "{quesse}",
+    "ch": "{hwesta}",
+
+    "d": "{ando}",
+
+    "đ": "{anto}", 
+    "dh": "{anto}",
+    "ð": "{anto}",
+    "ðh": "{anto}",
+
+    "f": "{formen}",
+    "ff": "{formen}",
+    "f$": "{ampa}", 
+    "g": "{ungwe}",
+    "h": "{hyarmen}", 
+    "hw": "{hwesta-sindarinwa}", 
+    "j": "{yanta}",
+    "k": "{quesse}",
+    "l": "{lambe}",
+    "^lh": "{alda}",
+    "m": "{malta}",
+    "^mh": "{malta-with-curl}",
+    "n": "{nuumen}",
+    "^ng": "{nwalme}",
+    "^ang": "[triple-dot-above]{nwalme}",
+    "p": "{parma}",
+    "ph": "{formen}",
+    "r": "{roomen}",
+    "^rh": "{arda}",
+    "r$": "{oore}",
+    "s": "{silme}",
+    "t": "{tinco}",
+    "th": "{thuule}",
+    "þ": "{thuule}",
+    "v": "{ampa}",
+    "w": "{vala}",
+    
+
+    
+    "nc": "[bar-above]{calma}", 
+    "nch": "[bar-above]{hwesta}", 
+    "nd": "[bar-above]{ando}", 
+    "nf": "[bar-above]{formen}", 
+    "ng": "[bar-above]{ungwe}", 
+    "angw": "[bar-above][over-twist][triple-dot-above]{ungwe}", 
+    "ngw": "[over-twist]{ungwe}", 
+    "nk": "[bar-above]{calma}", 
+    "nt": "[bar-above]{tinco}", 
+    "nth": "[bar-above]{thuule}", 
+    "mb": "[bar-above]{umbar}", 
+    "mp": "[bar-above]{parma}", 
+    "mph": "[bar-above]{formen}", 
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    "ñg": "[bar-above]{ungwe}",
+    "ñd": "[bar-above]{ando}",
+    "ñb": "[bar-above]{umbar}",
+    "ñ": "{nwalme}",
+    "ŋg": "[bar-above]{ungwe}",
+    "ŋd": "[bar-above]{ando}",
+    "ŋb": "[bar-above]{umbar}",
+    "ngg": "[bar-above]{ungwe}",
+    "ndd": "[bar-above]{ando}",
+    "ŋbb": "[bar-above]{umbar}",
+
+    
+    
+    
+    "and": "[bar-above][triple-dot-above]{ando}",
+    "end": "[bar-above][acute]{ando}",
+    "ind": "[bar-above][dot-above]{ando}",
+    "ond": "[bar-above][right-curl]{ando}",
+    "und": "[bar-above][left-curl]{ando}",
+
+    
+
+    "ans": "[bar-above][triple-dot-above]{silme-nuquerna}",
+    "ens": "[bar-above][acute]{silme-nuquerna}",
+    "ins": "[bar-above][dot-above]{silme-nuquerna}",
+    "ons": "[bar-above][right-curl]{silme-nuquerna}",
+    "uns": "[bar-above][left-curl]{silme-nuquerna}",
+
+    
+    
+    
+    
+    
+    "dw": "[over-twist]{ando}", 
+    
+    
+    
+    
+    
+    "gw": "[over-twist]{ungwe}", 
+    "agw": "[triple-dot-above]{telco}[over-twist]{ungwe}",
+    "egw": "[acute]{telco}[over-twist]{ungwe}",
+    "igw": "[dot-above]{telco}[over-twist]{ungwe}",
+    "ogw": "[right-curl]{telco}[over-twist]{ungwe}",
+    "ugw": "[left-curl]{telco}[over-twist]{ungwe}",
+    
+    
+    
+    
+    
+    
+
+    
+    
+    "ss": "{esse-nuquerna}",
+    "mm": "[bar-above]{malta}", 
+    "nn": "[bar-above]{nuumen}", 
+    "ll": "[bar-inside]{lambe}", 
+    "rr": "[bar-below]{roomen}"
+  },
+
+  "words": {
+    
+    
+    "panthael": "pant'hael",
+    "lanthir": "lant'hir",
+
+    
+    "arnoediad": "{roomen}[triple-dot-above]{nuumen}{ando}[acute]{telco}[dot-above]{ando}[triple-dot-above]",
+
+    "Rohan": "Rochan",
+    "Rohir": "Rochir",
+    "Rohirrim": "Rochirrim"
+  }
+}

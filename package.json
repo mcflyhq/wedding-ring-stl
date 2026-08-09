@@ -1,0 +1,50 @@
+{
+  "name": "wedding-ring-stl",
+  "private": false,
+  "version": "0.1.0",
+  "description": "Browser-based parametric wedding ring designer with Tengwar/Latin engraving and print-ready STL export",
+  "type": "module",
+  "license": "MIT",
+  "author": "Guillaume Palayer",
+  "keywords": [
+    "wedding-ring",
+    "stl",
+    "3d-printing",
+    "tengwar",
+    "three.js",
+    "jewelry",
+    "parametric"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWNER/wedding-ring-stl.git"
+  },
+  "bugs": {
+    "url": "https://github.com/OWNER/wedding-ring-stl/issues"
+  },
+  "homepage": "https://github.com/OWNER/wedding-ring-stl#readme",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/opentype.js": "^1.3.10",
+    "@types/three": "^0.185.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  },
+  "dependencies": {
+    "glaemscribe": "^1.3.1",
+    "lil-gui": "^0.21.0",
+    "opentype.js": "^2.0.0",
+    "tengwar": "^1.2.6",
+    "three": "^0.185.1",
+    "three-bvh-csg": "^0.0.18",
+    "three-mesh-bvh": "^0.9.14"
+  }
+}

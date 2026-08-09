@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>One Ring — Wedding Ring STL Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=Cinzel:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="app">
+      <div id="canvas-host"></div>
+
+      <header class="topbar">
+        <div class="brand">
+          <h1>One Ring Studio</h1>
+          <span>Parametric wedding band · Tengwar · STL export</span>
+        </div>
+        <div class="topbar-actions">
+          <button type="button" class="btn btn-ghost" id="btn-reset-camera">Reset view</button>
+          <button type="button" class="btn btn-primary" id="btn-export">Export STL</button>
+        </div>
+      </header>
+
+      <aside class="panel">
+        <div class="panel-header">
+          <h2>Ring design</h2>
+        </div>
+        <div class="panel-body">
+          <section class="section">
+            <div class="section-title">Size</div>
+            <div class="preset-row" id="size-presets"></div>
+            <div class="field-row">
+              <div class="field">
+                <label for="innerDiameterMm">Inner diameter (mm)</label>
+                <input
+                  type="number"
+                  id="innerDiameterMm"
+                  min="12"
+                  max="30"
+                  step="0.1"
+                  value="17.3"
+                  inputmode="decimal"
+                />
+              </div>
+              <div class="field">
+                <label for="bandWidthMm">Band width (mm)</label>
+                <input
+                  type="number"
+                  id="bandWidthMm"
+                  min="1.5"
+                  max="12"
+                  step="0.1"
+                  value="4.5"
+                  inputmode="decimal"
+                />
+              </div>
+            </div>
+            <div class="field">
+              <label for="bandThicknessMm">Thickness (mm)</label>
+              <input
+                type="number"
+                id="bandThicknessMm"
+                min="0.6"
+                max="4"
+                step="0.05"
+                value="1.6"
+                inputmode="decimal"
+              />
+            </div>
+            <p class="hint">Domed (D-shape) — rounded outer face, flat inner face</p>
+          </section>
+
+          <section class="section gold-estimate" id="gold-estimate">
+            <div class="section-title">18k gold estimate</div>
+            <p class="hint gold-estimate-note">
+              Plain domed band only (finger hole excluded, no engraving). Density 15.45&nbsp;g/cm³.
+            </p>
+            <dl class="estimate-grid">
+              <div>
+                <dt>Volume</dt>
+                <dd id="est-volume">—</dd>
+              </div>
+              <div>
+                <dt>18k mass</dt>
+                <dd id="est-mass-18k">—</dd>
+              </div>
+              <div>
+                <dt>Pure gold</dt>
+                <dd id="est-pure-gold">—</dd>
+              </div>
+              <div>
+                <dt>Melt value</dt>
+                <dd id="est-melt">—</dd>
+              </div>
+            </dl>
+            <div class="field">
+              <label for="goldSpotUsd">Gold spot (USD / troy oz)</label>
+              <input
+                type="number"
+                id="goldSpotUsd"
+                min="0"
+                step="10"
+                value="2400"
+                inputmode="decimal"
+              />
+            </div>
+            <p class="hint">
+              Melt value = pure gold content × spot. Not retail / labor / markup.
+            </p>
+          </section>
+
+          <section class="section">
+            <div class="section-title">Inscriptions</div>
+            <div class="field">
+              <label>Font</label>
+              <select id="font">
+                <option value="tengwar-annatar-italic" selected>Tengwar Annatar Italic</option>
+                <option value="tengwar-annatar">Tengwar Annatar</option>
+                <option value="ring-inscription">Ring Inscription (Latin)</option>
+                <option value="elvish-uncial">Elvish Uncial</option>
+                <option value="cinzel">Cinzel Classic</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="innerText">Inner text (Latin)</label>
+              <textarea id="innerText" spellcheck="false">Além do universo, em perpetuidade.</textarea>
+              <p class="hint" style="margin-top: 6px">
+                Reference / Latin face. For Tengwar Annatar, paste Tecendil keys in Advanced below.
+              </p>
+            </div>
+            <div class="annatar-preview" id="annatar-preview">
+              <div class="section-title" style="margin-bottom: 8px">Inscription preview (2D)</div>
+              <div id="annatar-preview-host"></div>
+            </div>
+            <div class="field">
+              <label for="innerDateText">Inner date (Latin digits)</label>
+              <input
+                type="text"
+                id="innerDateText"
+                value="27.09.2026"
+                placeholder="27.09.2026"
+                spellcheck="false"
+                autocomplete="off"
+              />
+              <p class="hint" style="margin-top: 6px">
+                Opposite the primary text · Inter · e.g. 27.09.2026
+              </p>
+            </div>
+            <div class="field">
+              <label for="outerText">Outer text (Latin)</label>
+              <textarea id="outerText" spellcheck="false" placeholder="Optional outer engraving…"></textarea>
+              <p class="hint" style="margin-top: 6px">
+                Starts at the same angular position as the inner line.
+              </p>
+            </div>
+            <details class="advanced-keys">
+              <summary>Advanced · Tecendil Annatar encoding</summary>
+              <p class="hint" style="margin: 8px 0">
+                Paste the Annatar key string from Tecendil (Font: Annatar). When set, these keys are engraved instead of the Latin fields.
+              </p>
+              <div class="field">
+                <label for="innerTengwarKeys">Inner Tecendil keys</label>
+                <textarea
+                  id="innerTengwarKeys"
+                  spellcheck="false"
+                  placeholder="Paste Tecendil Annatar keys for inner face…"
+                  rows="2"
+                ></textarea>
+              </div>
+              <div class="field">
+                <label for="outerTengwarKeys">Outer Tecendil keys</label>
+                <textarea
+                  id="outerTengwarKeys"
+                  spellcheck="false"
+                  placeholder="Paste Tecendil Annatar keys for outer face…"
+                  rows="2"
+                ></textarea>
+              </div>
+            </details>
+            <div class="field">
+              <label>
+                Text size
+                <span class="value" id="val-text-size">1.35 mm</span>
+              </label>
+              <input type="range" id="textSizeMm" min="0.6" max="2.2" step="0.05" value="1.35" />
+            </div>
+            <div class="field">
+              <label>
+                Date size
+                <span class="value" id="val-date-size">1.10 mm</span>
+              </label>
+              <input type="range" id="dateTextSizeMm" min="0.5" max="1.8" step="0.05" value="1.35" />
+            </div>
+            <div class="field">
+              <label>
+                Engraving depth
+                <span class="value" id="val-text-depth">0.35 mm</span>
+              </label>
+              <input type="range" id="textDepthMm" min="0.1" max="0.7" step="0.05" value="0.35" />
+            </div>
+            <div class="field">
+              <label>
+                Text rotation
+                <span class="value" id="val-text-angle">0°</span>
+              </label>
+              <input type="range" id="textAngleDeg" min="0" max="360" step="1" value="0" />
+            </div>
+            <p class="hint" style="margin-top: 4px">
+              Tengwar Annatar maps Latin keys to Elvish glyphs (classic typewriter layout).
+            </p>
+          </section>
+
+          <section class="section">
+            <div class="section-title">Appearance</div>
+            <div class="field">
+              <label>Metal finish</label>
+              <select id="metal">
+                <option value="gold" selected>Yellow gold</option>
+                <option value="rose-gold">Rose gold</option>
+                <option value="silver">Silver</option>
+                <option value="platinum">Platinum</option>
+                <option value="black">Blackened</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Mesh quality</label>
+              <select id="quality">
+                <option value="draft">Draft (fast)</option>
+                <option value="normal" selected>Normal</option>
+                <option value="high">High (export)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Lighting</label>
+              <div class="preset-row" id="light-presets" role="group" aria-label="Lighting presets">
+                <button type="button" class="chip light-chip active" data-light="midday">Midday</button>
+                <button type="button" class="chip light-chip" data-light="dawn">Dawn</button>
+                <button type="button" class="chip light-chip" data-light="dusk">Dusk</button>
+              </div>
+              <p class="hint">Natural key / fill / rim setups for metal highlights</p>
+            </div>
+            <label class="toggle-row">
+              <span>Show inscription ink</span>
+              <input type="checkbox" id="showInk" checked />
+            </label>
+            <p class="hint" style="margin-bottom: 8px">
+              Dark fill in recesses (preview only — not in STL). Hide to see pure metal carve.
+            </p>
+            <label class="toggle-row">
+              <span>Cutaway (inspect engraving)</span>
+              <input type="checkbox" id="cutaway" />
+            </label>
+          </section>
+        </div>
+        <div class="panel-footer">
+          <button type="button" class="btn btn-primary" id="btn-rebuild">Update ring</button>
+          <button type="button" class="btn btn-ghost" id="btn-export-footer">Download STL</button>
+          <p class="hint">
+            STL: binary · mm · High quality ≈ 0.05&nbsp;mm edges · depth ≥ 0.3&nbsp;mm for casting
+          </p>
+        </div>
+      </aside>
+
+      <div class="status-bar">
+        <div class="badge" id="stats">Triangles: —</div>
+        <div class="badge build-busy" id="build-busy" aria-live="polite">
+          <span class="build-busy-dot" aria-hidden="true"></span>
+          <span id="build-busy-label">Updating…</span>
+        </div>
+        <div class="badge hint">Drag to orbit · Scroll to zoom · Right-drag to pan</div>
+      </div>
+
+      <!-- Visible on hard refresh until first ring mesh is ready (JS toggles). -->
+      <div
+        class="loading-overlay visible initial"
+        id="loading"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <div class="loading-card">
+          <div class="loading-ring" aria-hidden="true">
+            <div class="spinner"></div>
+          </div>
+          <p class="loading-title" id="loading-title">Forging your ring</p>
+          <p class="loading-sub" id="loading-sub">Building geometry &amp; inscriptions…</p>
+        </div>
+      </div>
+      <div class="toast" id="toast"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

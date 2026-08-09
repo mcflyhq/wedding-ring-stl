@@ -1,0 +1,278 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+{
+  "name": "english-classical",
+  "languageCode": "en",
+  "normalizeVowels": false,
+
+  "tehtarFollow": true,
+  "rrule": true, 
+  "map": {
+    
+    "b": "{umbar}",
+    "c": "{quesse}",
+    
+    "ce": "{}{silme-nuquerna}[acute]",
+    "ci": "{}{silme-nuquerna}[dot-above]",
+    "cy": "{}{silme-nuquerna}[breve]",
+    
+    "nce$": "{nuumen}[dot-below]{silme-nuquerna}", 
+    "ce$": "[dot-below]{silme-nuquerna}",
+    "sci$": "{}{calma}[dot-above]", 
+    "cci$": "{}{calma}[dot-above]", 
+    "ci$": "{}{calma}[dot-above]", 
+    "cy$": "{}{silme-nuquerna}[breve]{telco}", 
+    "^mc": "{malta}[triple-dot-above]{quesse}", 
+
+    
+    
+    
+
+    "ch": "{calma}", 
+    "ck": "[bar-below]{quesse}",
+    "d": "{ando}",
+    "f": "{formen}",
+    "g": "{ungwe}",
+    "h": "{hyarmen}",
+    "j": "{anga}",
+    "k": "{quesse}",
+    "l": "{lambe}",
+    "m": "{malta}",
+    "n": "{nuumen}",
+    "p": "{parma}",
+    
+
+    "s": "{alt-silme}",
+
+    
+    "bb": "[bar-below]{umbar}", 
+    "cc": "[bar-below]{quesse}", 
+    "dd": "[bar-below]{ando}", 
+    "ff": "[bar-below]{formen}", 
+    "gg": "[bar-below]{ungwe}", 
+    "ll": "[bar-inside]{lambe}", 
+    "mm": "[bar-below]{malta}", 
+    "nn": "[bar-below]{nuumen}", 
+    "pp": "[bar-below]{parma}", 
+    "rr": "[bar-below]{oore}", 
+    "ss": "[bar-below]{alt-silme}", 
+    "tt": "[bar-below]{tinco}", 
+    "vv": "[bar-below]{ampa}", 
+    "zz": "[bar-below]{esse}", 
+
+    
+    "th": "{thuule}",
+    "dh": "{anto}",
+    "sh": "{harma}", 
+    "kh": "{anca}",
+    "zh": "{anca}", 
+    "gh": "{extended-ungwe}",
+
+    "aly$": "[triple-dot-above]{lambe}[breve]{telco}",
+    "ely$": "[acute]{lambe}[breve]{telco}",
+    "ily$": "[dot-above]{lambe}[breve]{telco}",
+    "oly$": "[right-curl]{lambe}[breve]{telco}",
+    "uly$": "[left-curl]{lambe}[breve]{telco}",
+    "ly$": "{lambe}{telco}[breve]",
+    "any$": "[triple-dot-above]{nuumen}[breve]{telco}",
+    "eny$": "[acute]{nuumen}[breve]{telco}",
+    "iny$": "[dot-above]{nuumen}[breve]{telco}",
+    "ony$": "[right-curl]{nuumen}[breve]{telco}",
+    "uny$": "[left-curl]{nuumen}[breve]{telco}",
+    "yny$": "[breve]{nuumen}[breve]{telco}",
+
+    "ng": "{nwalme}", 
+    
+    
+
+    "ph": "{extended-parma}",
+    "^uph": "[left-curl]{parma}{hyarmen}", 
+
+    "tw": "[over-twist]{tinco}",
+    
+    "gw": "[over-twist]{ungwe}",
+
+    "^wh": "{hwesta-sindarinwa}",
+    "kw": "[over-twist]{quesse}",
+    "qu": "[over-twist]{quesse}",
+
+    
+    "nc": "[tilde-above]{quesse}",
+    "mc": "[tilde-above]{quesse}",
+    
+    "md": "[tilde-above]{ando}",
+    "mb": "[tilde-above]{umbar}",
+    "nt": "[tilde-above]{tinco}",
+    "mp": "[tilde-above]{parma}",
+    "mt": "[tilde-above]{tinco}",
+    "im": "[dot-above][tilde-above]",
+    "im$": "[dot-above]{malta}",
+
+    
+
+    
+    "y": "[breve]",
+    
+    "y$": "[dot-above]{aara}",
+
+    
+    "aa": "[triple-dot-above]{telco}[triple-dot-above]{telco}",
+    "ee": "[acute]{telco}[acute]{telco}",
+    "ii": "[dot-above]{telco}[dot-above]{telco}",
+    "oo": "[right-curl]{telco}[right-curl]{telco}",
+    "uu": "[left-curl]{telco}[left-curl]{telco}",
+
+    
+    "â": "[triple-dot-above]{aara}",
+    "ê": "[acute]{aara}",
+    "î": "[dot-above]{aara}",
+    "ô": "[right-curl]{aara}",
+    "û": "[left-curl]{aara}",
+
+    
+    
+    
+    
+    "ai": "[triple-dot-above]{telco}[dot-above]{telco}",
+    "ei": "[acute]{telco}[dot-above]{telco}",
+    "oi": "[right-curl]{telco}[dot-above]{telco}",
+    "ui": "[left-curl]{telco}[dot-above]{telco}",
+    "au": "[triple-dot-above]{vala}", 
+    
+    "iu": "[dot-above]{vala}",
+    "ou": "[right-curl]{vala}",
+    "ay": "[triple-dot-above]{telco}[breve]{telco}",
+    "ey": "[acute]{telco}[breve]{telco}",
+    "oy": "[right-curl]{telco}[breve]{telco}",
+    "uy": "[left-curl]{telco}[breve]{telco}",
+
+    "ow": "[right-curl]{vala}",
+    "owe": "[right-curl][dot-below]{vala}",
+
+    "ea": "[acute][triple-dot-below]{telco}",
+    "ia": "[dot-above]{telco}[triple-dot-above]{telco}",
+    "oa": "[right-curl]{telco}[triple-dot-above]",
+    "ua": "[left-curl]{telco}[triple-dot-above]{telco}",
+    "ae": "[triple-dot-above]{telco}[acute]{telco}",
+    "ae$": "[triple-dot-above][dot-below]{telco}",
+    
+    
+    "ie$": "[dot-above][dot-below]{telco}", 
+    "oe": "[right-curl]{telco}[acute]{telco}",
+    "oë": "[right-curl]{telco}[acute]{telco}",
+    "oe$": "[right-curl][dot-below]{telco}",
+    
+    "ue$": "[left-curl][dot-below]{telco}",
+
+    "ya": "[breve]{telco}[triple-dot-above]{telco}", 
+    "ye": "[breve]{telco}[acute]{telco}", 
+    "yi": "[breve]{telco}[dot-above]{telco}", 
+    "yo": "[breve]{telco}[right-curl]{telco}", 
+    "yu": "[breve]{telco}[left-curl]{telco}", 
+
+    
+    
+    
+    
+    "ays$": "[triple-dot-above]{anna}{hook}",
+    "bs$": "{umbar}{hook-looped-left}",
+    "des$": "[dot-below]{ando}{hook}",
+    "ds$": "{ando}{hook}",
+    "fs$": "{formen}{hook}",
+    "gs$": "{ungwe}{hook}",
+    "ks$": "{quesse}{hook}",
+    "ngs$": "{nwalme}{hook-looped-left}",
+    "kes$": "[dot-below]{quesse}{hook}",
+    "ls$": "{lambe}{lifted-hook}",
+    "les$": "[dot-inside]{lambe}{hook}",
+    "ms$": "{malta}{hook}",
+    "mes$": "[dot-below]{malta}{hook-looped-left}",
+    "nds$": "[tilde-above]{ando}{hook}",
+    "ns$": "{nuumen}{hook}",
+    "ps$": "{parma}{hook}",
+    "rs$": "{oore}{hook}",
+    "ts$": "{tinco}{hook}",
+    "ves$": "[dot-below]{ampa}{hook}",
+    "ys$": "{anna}{hook}",
+    "oes$": "[right-curl]{telco}[acute]{telco}{hook}",
+    "s$": "{hook}", 
+    
+    
+
+    
+    "re$": "[dot-below]{oore}",
+    "be$": "[dot-below]{umbar}",
+    
+    
+    "de$": "[dot-below]{ando}",
+    "fe$": "[dot-below]{formen}",
+    "ge$": "[dot-below]{ungwe}",
+    "he$": "[dot-below]{hyarmen}",
+    "je$": "[dot-below]{anga}",
+    "ke$": "[dot-below]{quesse}",
+    "le$": "[dot-inside]{lambe}",
+    "me$": "[dot-below]{malta}",
+    "ne$": "[dot-below]{nuumen}",
+    "pe$": "[dot-below]{parma}",
+
+    "se$": "[dot-below]{alt-silme}",
+
+    "te$": "[dot-below]{tinco}",
+    "ve$": "[dot-below]{ampa}",
+
+    "t": "{tinco}",
+    "v": "{ampa}",
+
+    "w": "{vala}",
+    "x": "[right-curl-below]{quesse}", 
+    "z": "{esse}" 
+  },
+
+  "words": {
+    "and": "{and-shorthand}",
+
+    "of": "{of-shorthand}",
+    "the": "{the-shorthand}",
+    "of the": "{of-the-shorthand}",
+    "ofthe": "{of-the-shorthand}",
+
+    "to": "{tinco}[right-curl-below]",
+
+    
+
+    "age": "{anga}[triple-dot-above][dot-below]", 
+
+    "is": "{esse}[dot-above]",
+
+    "herein": "{hyarmen}{roomen}[acute][dot-below]{nuumen}[dot-above]",
+    "war": "{vala}{oore}[right-curl]",
+
+    "these": "{anto}{alt-silme}[dot-below][acute]",
+    "this": "{anto}[dot-above]{hook}",
+
+    "return": "{roomen}{tinco}[dot-above]{oore}[dot-below]{nuumen}", 
+
+    "ancient": "{calma}[tilde-above][triple-dot-above]{telco}[dot-above]{tinco}[tilde-above][acute]", 
+    "caesar": "{alt-silme}{aara}[dot-above]{alt-esse}{roomen}[dot-below]",
+    "caearas": "{alt-silme}{aara}[dot-above]{alt-esse}{roomen}[dot-below]{hook}",
+    "facade": "{formen}{alt-silme}[triple-dot-above]{ando}[dot-below][triple-dot-above]",
+    "facades": "{formen}{alt-silme}[triple-dot-above]{ando}[dot-below][triple-dot-above]{hook}",
+    "cello": "{calma}{lambe}[bar-inside][acute]{telco}[right-curl]",
+    "concerto": "{quesse}{nuumen}[right-curl]{calma}{oore}[acute]{tinco}{telco}[right-curl]",
+    "cappuccino": "{quesse}{parma}[triple-dot-above][bar-below]{calma}[left-curl]{nuumen}[dot-above]{telco}[right-curl]",
+    "ciao": "{calma}{vala}[triple-dot-above]"
+  }
+}

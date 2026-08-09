@@ -1,0 +1,108 @@
+{
+  "name": "beleriand",
+  "languageCode": "sjn", 
+
+  "normalizeVowels": true,
+
+  "map": {
+    
+    
+    
+    "a": "{osse}",
+    "e": "{yanta}",
+    "i": "{telco}", 
+    "o": "{anna}",
+    "u": "{uure}",
+
+    "â": "{osse}[acute]",
+    "ê": "{yanta}[acute]",
+    "î": "{telco}[acute]",
+    "ô": "{anna}[acute]",
+    "û": "{uure}[acute]",
+    "ŷ": "{alt-silme-nuquerna}[acute]",
+
+    
+    
+    
+    "ae": "{osse}[yanta-above]", 
+    "oe": "{anna}[yanta-above]",
+    "ai": "{osse}[double-dot-above]",
+    "ei": "{yanta}[double-dot-above]",
+    "ui": "{uure}[double-dot-above]",
+    "au": "{osse}[over-twist]",
+    "aw": "{osse}[over-twist]",
+
+    
+    
+    
+    "b": "{umbar}",
+    "c": "{calma}", 
+    "d": "{ando}",
+    "dh": "{anto}",
+    "f": "{formen}",
+    "f$": "{ampa}",
+    "g": "{anga}", 
+    "h": "{hyarmen}",
+    "k": "{calma}",
+    "l": "{lambe}",
+    "^lh": "{alda}",
+    "m": "{vala}", 
+    "n": "{oore}", 
+    "ng": "{anga}[bar-above]", 
+    
+    "^ng": "{noldo}", 
+    "p": "{parma}",
+    "ph": "{formen}",
+    "r": "{roomen}",
+    "^rh": "{arda}",
+    "s": "{silme}",
+    "t": "{tinco}",
+    "th": "{thuule}",
+    "v": "{ampa}",
+    "w": "{vilya}", 
+    "y": "{silme-nuquerna}",
+    "z": "{esse-nuquerna}",
+
+    
+    
+    
+    "nt": "{tinco}[bar-above]",
+    "nd": "{ando}[bar-above]",
+    "mp": "{parma}[bar-above]",
+    "mb": "{umbar}[bar-above]",
+    "nc": "{quesse}[bar-above]",
+    "nth": "{thuule}[bar-above]",
+    "ñg": "{ungwe}[bar-above]",
+    "ñd": "{ando}[bar-above]",
+    "ñb": "{umbar}[bar-above]",
+    "ñ": "{nwalme}",
+
+    
+    
+    
+    "gw": "{anga}[over-twist]",
+    "dw": "{ando}[over-twist]",
+
+    "ch": "{harma}", 
+    "sh": "{harma}",
+    "qu": "{quesse}[over-twist]", 
+
+    
+    
+    
+    
+    
+    "ss": "{esse}",
+    
+    "mm": "{malta}", 
+    "nn": "{nuumen}" 
+  },
+
+  "words": {
+    "panthael": "pan{tinco}[bar-above]{hyarmen}ael",
+    "lanthir": "la{tinco}[bar-above]{hyarmen}ir",
+    "Rohan": "Rochan",
+    "Rohir": "Rochir",
+    "Rohirrim": "Rochirrim"
+  }
+}

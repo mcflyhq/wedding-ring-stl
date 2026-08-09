@@ -1,0 +1,70 @@
+name: Bug report
+description: Something broken in the studio, mesh, export, or UI
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Search existing issues first so we can avoid duplicates.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps from a clean load if possible.
+      placeholder: |
+        1. npm run dev
+        2. Set date to …
+        3. Click …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      placeholder: e.g. Chrome 131, Safari 18, Firefox 133
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: e.g. macOS 15, Windows 11, Ubuntu 24.04
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: App / quality settings
+      description: Quality preset, cutaway, ink, relevant dimensions or text.
+      placeholder: High quality, cutaway on, date 27.09.2026, …
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots / screen recording
+      description: Drag images here. Especially useful for engraving / mesh issues.
+  - type: textarea
+    id: console
+    attributes:
+      label: Console errors
+      description: Paste any browser console output.
+      render: text

@@ -1,0 +1,114 @@
+{
+  "name": "Dutch",
+  "languageCode": "nl", 
+  "info": "Gebaseerd op <a href='https://syboor.eu/tengwar/'>Liesbeth Flobbe's Tengwar-mode</a>, aangepast door Freek Maes",
+  "normalizeVowels": false,
+  "tehtarFollow": true,
+  "preprocess": {
+    
+    
+    "á": "aa",
+    "é": "ee",
+    "í": "ie",
+    
+    
+    
+    "â": "a",
+    "ê": "e",
+    "û": "u",
+    
+    
+    
+    "ä": "'a",
+    "ë": "'e",
+    "ï": "'i",
+    "ö": "'o",
+    "ü": "'u"
+  },
+  "map": {
+    
+    
+    
+    "a": "[triple-dot-above]",
+    "e": "[acute]",
+    "i": "[dot-above]",
+    "o": "[right-curl]",
+    "u": "[dot-below]{telco}",
+    
+    
+    
+    "oe": "[left-curl]",
+    "aa": "[reversed-triple-dot-above]",
+    "ee": "[double-acute]",
+    "ie": "[double-dot-above]",
+    "oo": "[double-right-curl]",
+    "uu": "[double-left-curl]",
+    "eu": "[dot-below]{aara}",
+    
+    
+    
+    "aai": "[triple-dot-above]{yanta}",
+    "ei": "[acute]{yanta}",
+    "ij": "[acute]{yanta}",
+    "oi": "[right-curl]{yanta}",
+    "ooi": "[double-right-curl]{yanta}",
+    "oei": "[left-curl]{yanta}",
+    "ui": "[dot-below]{yanta}",
+    "au": "[triple-dot-above]{uure}",
+    "auw": "[triple-dot-above]{uure}",
+    "ou": "[triple-dot-above]{uure}",
+    "ouw": "[triple-dot-above]{uure}",
+    "ieuw": "[double-dot-above]{uure}",
+    "uw": "[double-left-curl]{uure}",
+    "eeuw": "[double-acute]{uure}",
+    
+    
+    
+    "t": "{tinco}",
+    "p": "{parma}",
+    "tj": "{calma}",
+    "k": "{quesse}",
+    "d": "{ando}",
+    "b": "{umbar}",
+    "dj": "{anga}",
+    "s": "{thuule}",
+    "f": "{formen}",
+    "sj": "{harma}",
+    "g": "{hwesta}",
+    "z": "{anto}",
+    "v": "{ampa}",
+    "zj": "{anca}",
+    "n": "{nuumen}",
+    "m": "{malta}",
+    "ng": "{nwalme}",
+    "r": "{oore}",
+    "w": "{vala}",
+    "j": "{anna}",
+    "l": "{lambe}",
+    "h": "{hyarmen}",
+    
+    
+    
+    "^sch": "{thuule}{hwesta}",
+    "sch": "{harma}",
+    
+    
+    
+    "nt": "[tilde-above]{tinco}",
+    "nd": "[tilde-above]{ando}",
+    "ns": "[tilde-above]{thuule}",
+    "nz": "[tilde-above]{anto}",
+    "nr": "[tilde-above]{oore}",
+    "mp": "[tilde-above]{parma}",
+    "mb": "[tilde-above]{umbar}",
+    "mf": "[tilde-above]{formen}",
+    "mv": "[tilde-above]{ampa}",
+    "mw": "[tilde-above]{vala}",
+    "ngk": "[tilde-above]{quesse}",
+    "ngg": "[tilde-above]{hyarmen}",
+    
+    
+    
+    "s$": "{hook}"
+  }
+}

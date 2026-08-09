@@ -1,0 +1,275 @@
+
+
+
+
+
+
+
+
+
+
+{
+  
+  "name": "spanish",
+  "languageCode": "es", 
+  "info": "Basado en <a href='http://lambenor.free.fr/tengwar/espanol_2006.html'>Modo de escritura Tengwar para el castellano</a>, adaptado por Helios De Rosario",
+
+  "rrule": false,
+
+  "preprocess": {
+    
+    "ce": "ze",
+    "ci": "zi",
+    "cé": "zé",
+    "cí": "zí",
+
+    
+    "ge": "je",
+    "gi": "ji",
+    "gé": "jé",
+    "gí": "jí",
+
+    
+    "gue": "ge",
+    "gui": "gi",
+    "gué": "gé",
+    "guí": "gí",
+
+    
+    "que": "ke",
+    "qui": "ki",
+    "qué": "ké",
+    "quí": "kí",
+
+    
+    "güe": "gue",
+    "güi": "gui",
+    "güé": "gué",
+    "güí": "guí",
+    "qüe": "kue",
+    "qüi": "kui",
+    "qüé": "kué",
+    "qüí": "kuí",
+
+    
+    "/^r/": "rr",
+    "/([^AaEeIiOoUuÁáÉéÍíÓóÚúRr])r/": "$1rr",
+
+    
+    "/y([AaEeIiOoUuÁáÉéÍíÓóÚú])/": "ŷ$1",
+    "/([AaEeIiOoÁáÉéÍíÓó])y$/": "$1i",
+    "/([AaEeIiOoÁáÉéÍíÓó])y([^AaEeIiOoUuÁáÉéÍíÓóÚúYy])/": "$1i$2"
+  },
+
+  "map": {
+    
+    
+    
+
+    
+    "á": "{aara}[triple-dot-above]{}",
+    "é": "[double-acute]{}",
+    "í": "{aara}[dot-above]{}",
+    "ó": "[double-right-curl]{}",
+    "ú": "[double-left-curl]{}",
+    "ý": "{aara}[breve]{}",
+
+    
+    
+    
+    
+
+    
+    "ai": "{yanta}[triple-dot-above]{}",
+    "au": "{uure}[triple-dot-above]{}",
+    "ái": "{aara}[triple-dot-above]{yanta}{}",
+    "áu": "{aara}[triple-dot-above]{uure}{}",
+
+    "ei": "{yanta}[acute]{}",
+    "eu": "{uure}[acute]{}",
+    "éi": "{yanta}[double-acute]{}",
+    "éu": "{uure}[double-acute]{}",
+
+    "oi": "{yanta}[right-curl]{}",
+    "ou": "{uure}[right-curl]{}",
+    "ói": "{yanta}[double-acute]{}",
+    "óu": "{uure}[double-acute]{}",
+
+    "uy": "{yanta}[left-curl]{}", 
+    "úy": "{yanta}[double-left-curl]{}",
+
+    
+    "ia": "[double-dot-below][triple-dot-above]{}",
+    "ie": "[double-dot-below][acute]{}",
+    "io": "[double-dot-below][right-curl]{}",
+    "iu": "[double-dot-below][left-curl]{}",
+
+    "iá": "[double-dot-below]{aara}[triple-dot-above]{}",
+    "ié": "[double-dot-below][double-acute]{}",
+    "ió": "[double-dot-below][double-right-curl]{}",
+    "iú": "[double-dot-below][double-left-curl]{}",
+
+    
+    
+    "ua": "[over-twist][triple-dot-above]{}",
+    "ue": "[over-twist][acute]{}",
+    "uo": "[over-twist][right-curl]{}",
+    "ui": "[over-twist][dot-above]{}",
+
+    "uá": "[over-twist]{aara}[triple-dot-above]{}",
+    "ué": "[over-twist][double-acute]{}",
+    "uó": "[over-twist][right-curl]{}",
+    "uí": "[over-twist]{aara}[dot-above]{}",
+
+    
+    "iai": "[double-dot-below]{yanta}[triple-dot-above]{}",
+    "iau": "[double-dot-below]{uure}[triple-dot-above]{}",
+    "iái": "[double-dot-below]{aara}[triple-dot-above]{yanta}{}",
+    "iáu": "[double-dot-below]{aara}[triple-dot-above]{uure}{}",
+
+    "iei": "[double-dot-below]{yanta}[acute]{}",
+    "ieu": "[double-dot-below]{uure}[acute]{}",
+    "iéi": "[double-dot-below]{yanta}[double-acute]{}",
+    "iéu": "[double-dot-below]{uure}[double-acute]{}",
+
+    "ioi": "[double-dot-below]{yanta}[right-curl]{}",
+    "iou": "[double-dot-below]{uure}[right-curl]{}",
+    "iói": "[double-dot-below]{yanta}[double-acute]{}",
+    "ióu": "[double-dot-below]{uure}[double-acute]{}",
+
+    "iuy": "[double-dot-below]{yanta}[left-curl]{}",
+    "iúy": "[double-dot-below]{yanta}[double-left-curl]{}",
+
+    "uai": "[over-twist]{yanta}[triple-dot-above]{}",
+    "uau": "[over-twist]{uure}[triple-dot-above]{}",
+    "uái": "[over-twist]{aara}[triple-dot-above]{yanta}{}",
+    "uáu": "[over-twist]{aara}[triple-dot-above]{uure}{}",
+
+    "uei": "[over-twist]{yanta}[acute]{}",
+    "ueu": "[over-twist]{uure}[acute]{}",
+    "uéi": "[over-twist]{yanta}[double-acute]{}",
+    "uéu": "[over-twist]{uure}[double-acute]{}",
+
+    "uoi": "[over-twist]{yanta}[right-curl]{}",
+    "uou": "[over-twist]{uure}[right-curl]{}",
+    "uói": "[over-twist]{yanta}[double-acute]{}",
+    "uóu": "[over-twist]{uure}[double-acute]{}",
+
+    
+    
+    "aia": "[triple-dot-above]{telco}[double-dot-below][triple-dot-above]{}",
+    "aie": "[triple-dot-above]{telco}[double-dot-below][acute]{}",
+    "aio": "[triple-dot-above]{telco}[double-dot-below][right-curl]{}",
+    "aiu": "[triple-dot-above]{telco}[double-dot-below][left-curl]{}",
+    "aiá": "[triple-dot-above]{telco}[double-dot-below]{aara}[triple-dot-above]{}",
+    "aié": "[triple-dot-above]{telco}[double-dot-below][double-acute]{}",
+    "aió": "[triple-dot-above]{telco}[double-dot-below][double-acute]{}",
+    "aiú": "[triple-dot-above]{telco}[double-dot-below][double-left-curl]{}",
+    "aua": "[triple-dot-above]{telco}[over-twist][triple-dot-above]{}",
+    "aue": "[triple-dot-above]{telco}[over-twist][acute]{}",
+    "auo": "[triple-dot-above]{telco}[over-twist][right-curl]{}",
+    "aui": "[triple-dot-above]{telco}[over-twist][dot-above]{}",
+    "auá": "[triple-dot-above]{telco}[over-twist]{aara}[triple-dot-above]{}",
+    "aué": "[triple-dot-above]{telco}[over-twist][double-acute]{}",
+    "auó": "[triple-dot-above]{telco}[over-twist][double-acute]{}",
+    "auí": "[triple-dot-above]{telco}[over-twist]{aara}[dot-above]{}",
+
+    "eia": "[acute]{telco}[double-dot-below][triple-dot-above]{}",
+    "eie": "[acute]{telco}[double-dot-below][acute]{}",
+    "eio": "[acute]{telco}[double-dot-below][right-curl]{}",
+    "eiu": "[acute]{telco}[double-dot-below][left-curl]{}",
+    "eiá": "[acute]{telco}[double-dot-below]{aara}[triple-dot-above]{}",
+    "eié": "[acute]{telco}[double-dot-below][double-acute]{}",
+    "eió": "[acute]{telco}[double-dot-below][double-acute]{}",
+    "eiú": "[acute]{telco}[double-dot-below][double-left-curl]{}",
+    "eua": "[acute]{telco}[over-twist][triple-dot-above]{}",
+    "eue": "[acute]{telco}[over-twist][acute]{}",
+    "euo": "[acute]{telco}[over-twist][right-curl]{}",
+    "eui": "[acute]{telco}[over-twist][dot-above]{}",
+    "euá": "[acute]{telco}[over-twist]{aara}[triple-dot-above]{}",
+    "eué": "[acute]{telco}[over-twist][double-acute]{}",
+    "euó": "[acute]{telco}[over-twist][double-acute]{}",
+    "euí": "[acute]{telco}[over-twist]{aara}[dot-above]{}",
+
+    "oia": "[right-curl]{telco}[double-dot-below][triple-dot-above]{}",
+    "oie": "[right-curl]{telco}[double-dot-below][acute]{}",
+    "oio": "[right-curl]{telco}[double-dot-below][right-curl]{}",
+    "oiu": "[right-curl]{telco}[double-dot-below][left-curl]{}",
+    "oiá": "[right-curl]{telco}[double-dot-below]{aara}[triple-dot-above]{}",
+    "oié": "[right-curl]{telco}[double-dot-below][double-acute]{}",
+    "oió": "[right-curl]{telco}[double-dot-below][double-acute]{}",
+    "oiú": "[right-curl]{telco}[double-dot-below][double-left-curl]{}",
+    "oua": "[right-curl]{telco}[over-twist][triple-dot-above]{}",
+    "oue": "[right-curl]{telco}[over-twist][acute]{}",
+    "ouo": "[right-curl]{telco}[over-twist][right-curl]{}",
+    "oui": "[right-curl]{telco}[over-twist][dot-above]{}",
+    "ouá": "[right-curl]{telco}[over-twist]{aara}[triple-dot-above]{}",
+    "oué": "[right-curl]{telco}[over-twist][double-acute]{}",
+    "ouó": "[right-curl]{telco}[over-twist][double-acute]{}",
+    "ouí": "[right-curl]{telco}[over-twist]{aara}[dot-above]{}",
+
+    "iua": "[dot-above]{telco}[over-twist][triple-dot-above]{}",
+    "iue": "[dot-above]{telco}[over-twist][acute]{}",
+    "iuo": "[dot-above]{telco}[over-twist][right-curl]{}",
+    "iui": "[dot-above]{telco}[over-twist][dot-above]{}",
+    "iuá": "[dot-above]{telco}[over-twist]{aara}[triple-dot-above]{}",
+    "iué": "[dot-above]{telco}[over-twist][double-acute]{}",
+    "iuó": "[dot-above]{telco}[over-twist][double-acute]{}",
+    "iuí": "[dot-above]{telco}[over-twist]{aara}[dot-above]{}",
+
+    "uia": "[dot-above]{telco}[double-dot-below][triple-dot-above]{}",
+    "uie": "[dot-above]{telco}[double-dot-below][acute]{}",
+    "uio": "[dot-above]{telco}[double-dot-below][right-curl]{}",
+    "uiu": "[dot-above]{telco}[double-dot-below][left-curl]{}",
+    "uiá": "[dot-above]{telco}[double-dot-below]{aara}[triple-dot-above]{}",
+    "uié": "[dot-above]{telco}[double-dot-below][double-acute]{}",
+    "uió": "[dot-above]{telco}[double-dot-below][double-acute]{}",
+    "uiú": "[dot-above]{telco}[double-dot-below][double-left-curl]{}",
+
+    
+    
+    
+
+    "b": "{umbar}",
+    "c": "{quesse}",
+    "ch": "{calma}",
+    "d": "{ando}",
+    "f": "{formen}",
+    "g": "{ungwe}",
+    "h": "{hyarmen}",
+    "j": "{hwesta}",
+    "k": "{quesse}",
+    "l": "{lambe}",
+    "ll": "{alda}",
+    "m": "{malta}",
+    "n": "{nuumen}",
+    "ñ": "{noldo}",
+    "p": "{parma}",
+    "q": "{quesse}", 
+    "r": "{oore}", 
+    "rr": "{roomen}", 
+    "s": "{silme}",
+    "s$": "{hook}", 
+    "t": "{tinco}",
+    "v": "{ampa}",
+    "w": "{vala}",
+    "x": "{quesse}[right-curl-below]", 
+    "ŷ": "{anca}",
+    "z": "{thuule}",
+
+    
+    "nt": "{tinco}[tilde-above]",
+    "mp": "{parma}[tilde-above]",
+    "nch": "{calma}[tilde-above]",
+    "nc": "{quesse}[tilde-above]",
+    "nk": "{quesse}[tilde-above]",
+    "nd": "{ando}[tilde-above]",
+    "mb": "{umbar}[tilde-above]",
+    "ng": "{ungwe}[tilde-above]"
+  },
+
+  "words": {
+    "y": "{telco}[breve]",
+    "jeans": "{hwesta}[i]ns"
+  }
+}

@@ -1,0 +1,255 @@
+
+
+
+
+
+
+
+
+
+
+
+{
+  
+  "name": "Português BR",
+  "languageCode": "pt-br", 
+
+  "info": "Baseado no <a href='https://www.valinor.com.br/forum/topico/modo-tengwar-portugues-mtp.94672/' target='_blank'>Modo Tengwar Português</a> criado por Deriel, adaptado por Bruno Romualdo.",
+
+  "rrule": false,
+
+  
+  
+  
+  
+  
+  
+  
+  
+
+  
+  "wordPattern": "A-Za-zÀ-ÖØ-öø-ÿĀ-ſãe͂i͂õu͂_*",
+
+  "preprocess": {
+    
+    "sç": "ss",
+    "ç": "ss",
+    "/(sc|SC)([eiEI])/": "c$2",
+
+    
+    "/(xc|XC)([eiEI])/": "c$2", 
+    "/([aeiouà-úAEIOUÀ-Ú])[xX]($|[aeiouà-úAEIOUÀ-Ú])/": "$1cs$2", 
+    "/([aeiouà-úAEIOUÀ-Ú])[xX]([^aeiouà-úAEIOUÀ-Ú])/": "$1s$2", 
+
+    
+    "/([^qgQG])(ue|UE)([sS])?$/": "$1_dtcxi_i$3", 
+    "/(ul|UL)($|[^aeiouà-úAEIOUÀ-Ú])/": "_dtdxu_u$2", 
+
+    
+    "/([ãõÃÕ])[eE]([sS])?$/": "$1i$2",
+    "/([^aeiouà-úAEIOUÀ-Ú]||(qu|QU))[eE]([sS])?$/": "$1i$3",
+    "/([^aeiouà-úAEIOUÀ-Ú]||[ãÃ])[oO]([sS])?$/": "$1u$2", 
+    "/([eE])[oO]([sS])?$/": "_dtcxu_u$2",
+    "/([aãAÃ])([mnMN])$/": "ãu",
+    "/([eéEÉ])([mnMN])([sS])?$/": "ei_nzl_$3",
+    "/([aeiouà-úAEIOU]||[ãÃ])[lL]$/": "$1u",
+
+    
+    
+    "/([aeiouà-úAEIOUÀ-Ú])[nmNM]((s)?$|[^haeiouà-úHAEIOUÀ-Ú_])/": "$1_nzl_$2",
+
+    
+    "/^[cC]([eéêiíEÉÊIÍ])/": "s$1", 
+    "/[cC]([eéêiíEÉÊIÍ])/": "ss$1",
+
+    
+    "/([aeiouà-úAEIOUÀ-Ú])[sS]([aeiouà-úAEIOUÀ-Ú])/": "$1z$2",
+
+    "/([aeiouà-úAEIOU])[lL]([^haeiouà-úHAEIOUÀ-Ú])/": "$1u$2",
+
+    
+    "/[zZ]$/": "s",
+
+    
+    "ch": "x",
+
+    
+    "/[gG]([eéèêëiíìEÉÈÊËIÍÌ])/": "j$1",
+
+    
+    "/(gu|GU)([aáãoóõAÁÃOÓÕ])/": "gü$2",
+    "/(gu|GU)([eéêiíEÉÊIÍ])/": "g$2",
+
+    
+    "/(qu|QU)([eéêiíEÉÊIÍ])/": "k$2",
+
+    
+    
+    
+
+    
+    "/[dD]([iíìIÍÌ])/": "_dfric_$1", 
+
+    
+    "/[tT]([iíìIÍÌ])/": "_tfric_$1",
+
+    
+
+    
+    "/([aeiouà-úAEIOUÀ-Ú])[rR]([aeiouà-úAEIOUÀ-Ú])/": "$1r$2",
+
+    
+    "/([^AaEeIiOoUuÁáÉéÍíÓóÚúRr])[rR]/": "$1r", 
+
+    
+    "/([lLnN])[rR]/": "$1rr",
+
+    
+    
+    
+
+    
+
+    "/[iI]([aeioAEIO])/": "_ditix_$1", 
+    "/([^qgQG])[uU]([aeouAEOU])/": "$1_ditux_$2", 
+
+    "/[iI][úÚ]([sS])?$/": "_dtcxu_u$1", 
+
+    
+    "/([aãâeéêoóõuAÃÂEÉOÓÕU])[iI]/": "_ditxi_$1", 
+    "/([aáãâeéoóiuAÁÃÂEÉIOÓU])[uU]/": "_ditxu_$1", 
+
+    
+    
+    
+    
+
+    
+    
+    
+    
+    
+    
+
+    
+    "/([mM])_ditxi_([uU])([tT]||_tfric_)/": "$1_ditxi_$2_nzl_$3"
+  },
+
+  "map": {
+    
+    "_nzl_": "[tilde-above]{}", 
+
+    
+    "_dfric_": "{anto}", 
+    "_tfric_": "{thuule}", 
+
+    
+    "_ditix_": "{anna}", 
+    "_ditux_": "{vilya}", 
+    "_ditxi_": "{yanta}", 
+    "_ditxu_": "{uure}", 
+
+    "_dtcxu_": "{anna}", 
+    "_dtcxi_": "{vilya}", 
+    "_dtdxu_": "{uure}", 
+
+    
+    
+    
+    
+    
+
+    "a": "[triple-dot-above]{}",
+    "e": "[acute]{}",
+    "i": "[dot-above]{}",
+    "o": "[right-curl]{}",
+    "u": "[left-curl]{}",
+
+    
+    "a*": "[triple-dot-above]{}",
+    "e*": "[acute]{}",
+    "i*": "[dot-above]{}",
+    "o*": "[right-curl]{}",
+    "ó*": "[breve]{}",
+    "u*": "[left-curl]{}",
+
+    
+    "ã": "[triple-dot-above][tilde-above]{}",
+    "e͂": "[acute][tilde-above]{}",
+    "i͂": "[dot-above][tilde-above]{}",
+    "õ": "[right-curl][tilde-above]{}",
+    "u͂": "[left-curl][tilde-above]{}",
+
+    
+    "é": "[double-dot-above]{}",
+    "ió": "[dot-above]{telco}[breve]{}",
+    "ó": "[breve]{}",
+
+    
+    
+    "â": "[triple-dot-above]{}",
+    "ê": "[acute]{}",
+    "ô": "[right-curl]{}",
+    
+    "á": "[triple-dot-above]{}",
+    "í": "[dot-above]{}",
+    "ú": "[left-curl]{}",
+    
+    "à": "[triple-dot-above]{}",
+    
+    "ä": "[triple-dot-above]{}",
+    "ë": "[acute]{}",
+    "ö": "[right-curl]{}",
+    "ü": "[left-curl]{}",
+
+    
+    
+    
+
+    "b": "{umbar}",
+    "c": "{calma}",
+    
+    "d": "{ando}",
+    "f": "{formen}",
+    "g": "{anga}",
+    
+    "gü": "{ungwe}",
+    
+    "j": "{anca}",
+    "k": "{calma}",
+    "l": "{lambe}",
+    "lh": "{alda}",
+    "m": "{malta}",
+    "n": "{nuumen}",
+    "nh": "{noldo}",
+    "p": "{parma}",
+    "q": "{quesse}", 
+    "qu": "{quesse}",
+    "qü": "{quesse}",
+    "r": "{oore}", 
+    "^r": "{roomen}", 
+    "rr": "{roomen}", 
+
+    "s": "{silme}",
+    "ss": "{silme}",
+    "^s": "{silme}",
+    "s$": "{hook}",
+
+    "t": "{tinco}",
+    "v": "{ampa}",
+    
+    "x": "{harma}", 
+    
+    "z": "{esse-nuquerna}"
+  },
+
+  "words": {
+    
+    "banana": "{umbar}[triple-dot-above]{nuumen}[triple-dot-above][tilde-above]{nuumen}[triple-dot-above]",
+    "bananas": "{umbar}[triple-dot-above]{nuumen}[triple-dot-above][tilde-above]{nuumen}[triple-dot-above]{hook}",
+    
+    "cama": "{calma}[triple-dot-above][tilde-above]{malta}[triple-dot-above]",
+    "camas": "{calma}[triple-dot-above][tilde-above]{malta}[triple-dot-above]{hook}",
+    "porém": "{parma}[right-curl]{uure}[tilde-above]{malta}{yanta}[tilde-above]"
+  }
+}
