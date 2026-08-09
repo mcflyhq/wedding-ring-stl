@@ -5,6 +5,16 @@ import { buildTextLayout, engraveByDisplacement } from './textEngraving'
 import type { RingParams } from './types'
 import { METAL_COLORS } from './types'
 
+export interface BuildStages {
+  mode: 'preview' | 'final'
+  /** Vertex displacement ran for inscriptions (includes date on preview). */
+  ranDisplacement: boolean
+  /** Expensive solid date CSG cavities — final/export only. */
+  ranDateCsg: boolean
+  /** Wall-clock ms for this build (includes layout + carve). */
+  durationMs: number
+}
+
 export interface BuiltRing {
   /** Full group: band + visible inscription fill (preview). Export uses `exportMesh`. */
   group: THREE.Group
@@ -13,12 +23,14 @@ export interface BuiltRing {
   geometry: THREE.BufferGeometry
   triangleCount: number
   cutawayPlane: THREE.Plane | null
+  /** Observable stage flags for performance tests / debugging. */
+  stages: BuildStages
 }
 
 export interface BuildOptions {
   /**
-   * `preview` — draft quality, skip expensive date CSG.
-   * `final` — full quality + solid date CSG cavities.
+   * `preview` — interactive: draft-friendly, **skip date CSG**; date still recessed via displacement.
+   * `final` — export-grade: user quality + solid date CSG cavities.
    */
   mode?: 'preview' | 'final'
   /** Override mesh quality (used for live draft while dragging). */
@@ -75,7 +87,7 @@ function makeCutawayPlane(params: RingParams): THREE.Plane | null {
  * CSG-subtract solid date digits from the band → full solid cavities.
  * Must run on a correctly wound solid (see ringGeometry profile winding).
  */
-function carveDateWithCsg(
+export function carveDateWithCsg(
   bandGeom: THREE.BufferGeometry,
   cutter: THREE.BufferGeometry,
 ): THREE.BufferGeometry {
@@ -128,16 +140,21 @@ export function disposeBuiltRing(built: BuiltRing): void {
 /**
  * Build ring + inscription.
  *
- * Order (critical for performance + ink-off visibility):
- * 1. Displacement on the **clean lathe** for ALL text including date
- *    → recesses exist even when ink is hidden
- * 2. Date CSG after that for solid full-digit cavities (always when date present)
- *    → densifies only after Tengwar displacement finishes
+ * Performance contract:
+ * - **preview**: displacement for all inscriptions (including date) — metal recesses without CSG cost
+ * - **final**: same displacement, then date CSG for solid export-grade cavities
+ *
+ * Order: displace on clean lathe first, then optional CSG (avoids densifying mesh before Tengwar walk).
  */
 export async function buildRing(
   params: RingParams,
   options: BuildOptions = {},
 ): Promise<BuiltRing> {
+  const t0 =
+    typeof performance !== 'undefined' && performance.now
+      ? performance.now()
+      : Date.now()
+  const mode = options.mode ?? 'final'
   const isCancelled = options.isCancelled ?? (() => false)
 
   const workParams: RingParams = options.qualityOverride
@@ -146,6 +163,8 @@ export async function buildRing(
 
   let bandGeom = getBlankBandGeometry(workParams)
   let layout: Awaited<ReturnType<typeof buildTextLayout>> = null
+  let ranDisplacement = false
+  let ranDateCsg = false
 
   try {
     throwIfCancelled(isCancelled)
@@ -159,8 +178,7 @@ export async function buildRing(
     await yieldToMain()
     throwIfCancelled(isCancelled)
 
-    // 1) Displacement FIRST — Tengwar + date (date must leave metal recesses
-    //    so the engraving is visible with ink fill turned OFF)
+    // 1) Displacement on clean lathe — Tengwar + date recesses (ink-off visibility)
     if (layout && layout.polys.length > 0) {
       const next = await engraveByDisplacement(
         bandGeom,
@@ -168,6 +186,7 @@ export async function buildRing(
         workParams,
         isCancelled,
       )
+      ranDisplacement = true
       if (next !== bandGeom) {
         bandGeom.dispose()
         bandGeom = next
@@ -176,16 +195,20 @@ export async function buildRing(
 
     throwIfCancelled(isCancelled)
 
-    // 2) Solid date CSG — full digit cavities (mesh-density independent).
-    //    Always when a date cutter exists (preview uses draft lathe → fast enough).
-    if (layout?.dateCutter) {
+    // 2) Date CSG — final/export only (expensive; skipped on live preview)
+    const useDateCsg = mode === 'final' && !!layout?.dateCutter
+    if (useDateCsg && layout?.dateCutter) {
       await yieldToMain()
       throwIfCancelled(isCancelled)
       const carved = carveDateWithCsg(bandGeom, layout.dateCutter)
+      ranDateCsg = true // path entered (success or CSG fallback still marks stage)
       if (carved !== bandGeom) {
         bandGeom.dispose()
         bandGeom = carved
       }
+    }
+
+    if (layout?.dateCutter) {
       layout.dateCutter.dispose()
       layout.dateCutter = null
     }
@@ -232,12 +255,23 @@ export async function buildRing(
     const outGeom = bandGeom
     bandGeom = null as unknown as THREE.BufferGeometry
 
+    const t1 =
+      typeof performance !== 'undefined' && performance.now
+        ? performance.now()
+        : Date.now()
+
     return {
       group,
       exportMesh: bandMesh,
       geometry: outGeom,
       triangleCount: Math.round(triCount + inkTris),
       cutawayPlane,
+      stages: {
+        mode,
+        ranDisplacement,
+        ranDateCsg,
+        durationMs: Math.round(t1 - t0),
+      },
     }
   } catch (err) {
     if (bandGeom) bandGeom.dispose()
