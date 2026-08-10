@@ -2,7 +2,7 @@
  * Tecendil-compatible transcription engine.
  *
  * Mode files use the open format published at arnog/tecendil-js (preprocess +
- * map + words + tengwar literals). Encoding to Annatar/Dan-Smith keys is ours —
+ * map + words + tengwar literals). Encoding to Annatar/Dan-Smith keys is ours -
  * no network calls to tecendil.com.
  */
 
@@ -150,7 +150,7 @@ export function parseLiterals(literal: string): TengwaToken[] {
  * Attach tehtar to tengwar columns.
  *
  * Tecendil vowel maps are usually `[tehta]{}` (tehta on a short carrier).
- * Consonant + following vowel often expands to `{tinco}[tehta]{}` — the tehta
+ * Consonant + following vowel often expands to `{tinco}[tehta]{}` - the tehta
  * belongs on the carrier, NOT on tinco. Look-ahead of 3 tokens is required.
  */
 export function tokensToColumns(tokens: TengwaToken[]): AnnatarColumn[] {
@@ -265,7 +265,7 @@ function transcribeWord(word: string, mode: TecendilMode, rules: CompiledRule[])
       i += hit.consumed
       continue
     }
-    // Unknown char — skip letters silently? Keep as pass-through gap
+    // Unknown char - skip letters silently? Keep as pass-through gap
     const ch = word[i]!
     // punctuation handled outside
     if (/\s/.test(ch)) {
@@ -292,7 +292,7 @@ function defaultPunctuation(ch: string): AnnatarColumn[] | null {
       return [{ tengwa: 'full-stop' }]
     case '-':
     case '–':
-    case '—':
+    case '-':
       return [{ tengwa: 'full-stop' }]
     case '(':
     case ')':

@@ -26,7 +26,7 @@ export interface RingParams {
   dateTextSizeMm: number
   /** Angular offset of the primary inscription (degrees); date is +180° */
   textAngleDeg: number
-  /** Font key for primary / outer text — Tengwar Annatar + fallbacks */
+  /** Font key for primary / outer text - Tengwar Annatar + fallbacks */
   font: 'tengwar-annatar' | 'tengwar-annatar-italic' | 'ring-inscription' | 'elvish-uncial' | 'cinzel'
   /**
    * Tecendil Annatar key string for the inner face.

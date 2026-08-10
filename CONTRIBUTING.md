@@ -1,7 +1,6 @@
 # Contributing
 
-Thanks for helping improve **One Ring Studio**. This doc is the short path from
-clone → change → pull request.
+Thanks for helping improve **One Ring Studio**. Short path: clone → change → pull request.
 
 ## Ways to contribute
 
@@ -26,6 +25,8 @@ npm run dev
 
 Open the URL Vite prints (default `http://127.0.0.1:5173`).
 
+Hosted demo (no install): https://wedding-ring-stl.vercel.app
+
 ### Useful scripts
 
 | Command | Purpose |
@@ -33,6 +34,8 @@ Open the URL Vite prints (default `http://127.0.0.1:5173`).
 | `npm run dev` | Local dev server with HMR |
 | `npm run build` | Typecheck + production build to `dist/` |
 | `npm run preview` | Serve the production build locally |
+| `npm test` | Integration checks for preview vs final `buildRing` |
+| `npm run typecheck` | TypeScript only |
 
 ## Project map
 
@@ -46,18 +49,20 @@ src/
   tengwarTranscribe.ts # Resolve Latin vs Tecendil keys
   types.ts             # RingParams + defaults
 public/fonts/          # Bundled typefaces (see THIRD_PARTY_NOTICES.md)
+scripts/
+  test-build-modes.mts # Preview / final stage tests
 ```
 
 ## Coding guidelines
 
-- **TypeScript** — no `any` without a short justification comment; no bare
+- **TypeScript:** no `any` without a short justification comment; no bare
   `@ts-ignore` / `@ts-expect-error` without explanation.
-- **Match existing style** — keep changes focused; avoid drive-by refactors.
-- **Comments** — explain *why*, not *what*; delete dead code instead of
+- **Match existing style:** keep changes focused; avoid drive-by refactors.
+- **Comments:** explain *why*, not *what*; delete dead code instead of
   commenting it out.
-- **Performance** — interactive rebuilds should stay responsive (debounce,
+- **Performance:** interactive rebuilds should stay responsive (debounce,
   cancel in-flight work, draft quality while dragging).
-- **Print safety** — export mesh must be the solid band with recesses only
+- **Print safety:** export mesh must be the solid band with recesses only
   (no cutaway, no preview-only ink unless intentional).
 
 ## Pull requests
@@ -65,7 +70,7 @@ public/fonts/          # Bundled typefaces (see THIRD_PARTY_NOTICES.md)
 1. Fork the repo (or branch from `main` if you have write access).
 2. Create a branch: `git checkout -b fix/short-description`.
 3. Make a focused change; keep PRs reviewable.
-4. Run `npm run build` and fix type errors.
+4. Run `npm run build` and `npm test`; fix failures.
 5. Manually smoke-test in the browser:
    - Ring appears with default params
    - Inner / outer text and date update after rebuild

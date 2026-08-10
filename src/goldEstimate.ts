@@ -1,5 +1,5 @@
 /**
- * Plain domed (D-shape) wedding band metal estimate — 18k gold.
+ * Plain domed (D-shape) wedding band metal estimate - 18k gold.
  *
  * Volume is the solid metal of the band only (finger hole excluded).
  * Engraving is ignored (plain ring).
@@ -35,7 +35,7 @@ export interface GoldEstimate {
   pureGoldGrams: number
   /** Pure gold content (troy oz) */
   pureGoldTroyOz: number
-  /** Rough metal cost at given spot (USD) — melt value of pure gold only */
+  /** Rough metal cost at given spot (USD) - melt value of pure gold only */
   meltValueUsd: number
   /** Spot used for melt value */
   spotUsdPerTroyOz: number

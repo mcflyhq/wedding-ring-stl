@@ -24,3 +24,6 @@ jobs:
 
       - name: Typecheck & build
         run: npm run build
+
+      - name: Build-mode tests
+        run: npm test

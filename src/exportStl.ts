@@ -27,7 +27,7 @@ export function exportMeshToStl(
   const exportRoot = new THREE.Group()
   object.traverse((child) => {
     if (!(child instanceof THREE.Mesh) || !child.geometry) return
-    // Skip preview ink meshes — only the solid band with carved recesses
+    // Skip preview ink meshes - only the solid band with carved recesses
     if (child.name === 'inscription-glyph') return
 
     const geom = child.geometry.clone()

@@ -25,8 +25,9 @@ Please **do not** open a public issue for security problems that could put
 users at risk.
 
 1. Prefer [GitHub Security Advisories](https://docs.github.com/en/code-security/security-advisories)
-   on this repository (once published on GitHub), or
-2. Contact the repository owner privately via the email on their GitHub profile.
+   on this repository, or
+2. Open a private report via the repo Security tab, or email the maintainer listed
+   on https://github.com/mcflyhq (profile contact).
 
 Include:
 

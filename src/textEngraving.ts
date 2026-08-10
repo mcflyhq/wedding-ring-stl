@@ -13,7 +13,7 @@ interface DomeParams {
   halfW: number
 }
 
-/** Curve tessellation for ExtrudeGeometry — smooth Annatar + Inter digits. */
+/** Curve tessellation for ExtrudeGeometry - smooth Annatar + Inter digits. */
 const EXTRUDE_CURVE_SEGMENTS = 16
 /** Outline sampling for displacement masks. */
 const POLY_DIVISIONS = 48
@@ -175,7 +175,7 @@ export interface TextLayout {
   previewGeometries: THREE.BufferGeometry[]
   /**
    * Solid letter cutter for the Latin date (inner face only).
-   * CSG-subtracted from the band for full solid cavities — displacement cannot
+   * CSG-subtracted from the band for full solid cavities - displacement cannot
    * resolve thin Inter strokes on a lathe mesh.
    */
   dateCutter: THREE.BufferGeometry | null
@@ -253,7 +253,7 @@ interface SurfaceJob {
   sizeMm: number
   font: Font | Promise<Font>
   keysOverride?: string
-  /** Date / Inter digits — solid CSG carve + ink */
+  /** Date / Inter digits - solid CSG carve + ink */
   latinSafe?: boolean
   angularDirection: AngularDirection
 }
@@ -261,7 +261,7 @@ interface SurfaceJob {
 export type AngularDirection = 1 | -1
 
 /**
- * Build per-glyph OpenType paths with advances (never uses GSUB — safe for Inter).
+ * Build per-glyph OpenType paths with advances (never uses GSUB - safe for Inter).
  */
 function pathsForLatinRun(font: Font, text: string, sizeMm: number): Path[] {
   const paths: Path[] = []
@@ -288,7 +288,7 @@ function pathsForLatinRun(font: Font, text: string, sizeMm: number): Path[] {
  * Layout a single text run onto the ring.
  * Glyph coords are centered (working placement from earlier versions).
  *
- * Date (latinSafe): solid CSG cutter + ink only — no displacement polys.
+ * Date (latinSafe): solid CSG cutter + ink only - no displacement polys.
  * Thin Inter strokes cannot be resolved by vertex displacement on a lathe mesh.
  */
 async function layoutTextRun(
@@ -340,7 +340,7 @@ async function layoutTextRun(
   }
   if (!Number.isFinite(minX)) return { polys: [], previews: [], cutter: null, encoded, widthMm: 0 }
 
-  // Center run at origin — same as the versions where date carved correctly
+  // Center run at origin - same as the versions where date carved correctly
   const cx = (minX + maxX) / 2
   const cy = -((minY + maxY) / 2)
   const widthMm = maxX - minX
@@ -368,7 +368,7 @@ async function layoutTextRun(
       const shapes = pathToShapes(path)
       if (shapes.length === 0) continue
 
-      // --- Ink solid (preview + visual fill) — entirely inside metal ---
+      // --- Ink solid (preview + visual fill) - entirely inside metal ---
       const inkGeom = new THREE.ExtrudeGeometry(shapes, {
         depth: inkDepth,
         bevelEnabled: false,
@@ -411,7 +411,7 @@ async function layoutTextRun(
       }
 
       if (latinSafe && surface === 'inner') {
-        // CSG cutter for final builds — full solid cavities independent of mesh density
+        // CSG cutter for final builds - full solid cavities independent of mesh density
         const cutGeom = new THREE.ExtrudeGeometry(shapes, {
           depth: cutterDepth,
           bevelEnabled: false,
@@ -614,7 +614,7 @@ function normalizeAngle(angle: number): number {
 
 /**
  * Bend flat glyph mesh onto the ring so ink sits fully inside the metal pocket
- * (recessed engraving fill — never embossed into the hole).
+ * (recessed engraving fill - never embossed into the hole).
  */
 function bendOntoSurface(
   geometry: THREE.BufferGeometry,
@@ -709,7 +709,7 @@ function yieldToMain(): Promise<void> {
 }
 
 /**
- * Carve inscriptions into ring vertices — recesses into the metal.
+ * Carve inscriptions into ring vertices - recesses into the metal.
  * Inner: push vertices to larger radius (away from hole).
  * Outer: push along dome normal into the band.
  */

@@ -1,19 +1,23 @@
 # One Ring Studio
 
-**Parametric wedding-band designer** in the browser: domed ring geometry, dual-face inscriptions (Tengwar Annatar + Latin date), live 3D preview, and **print-ready binary STL** export (millimeters).
+Parametric wedding-band designer in the browser: domed ring geometry, dual-face inscriptions (Tengwar Annatar + Latin date), live 3D preview, and print-ready binary STL export (millimeters).
 
-> Client-side only — design stays on your machine unless you host the static build yourself.
+Client-side only. Designs stay on your machine unless you host the static build yourself.
+
+**Live demo:** https://wedding-ring-stl.vercel.app
+
+**Repository:** https://github.com/mcflyhq/wedding-ring-stl
 
 ---
 
 ## Features
 
-- **Domed (D-profile) band** — inner diameter (US size chips), width, thickness
-- **Inner + outer text** — Latin fields; optional **Tecendil Annatar key** overrides for exact tengwar
-- **Inner date stamp** — Inter digits, opposite the primary inscription
-- **Live preview** — orbit / zoom / pan, metal finishes, cutaway, ink fill, lighting presets
-- **18k gold estimate** — rough mass / melt value from volume + spot price
-- **STL export** — binary, mm units, solid band with recessed engraving
+- **Domed (D-profile) band:** inner diameter (US size chips), width, thickness
+- **Inner + outer text:** Latin fields; optional Tecendil Annatar key overrides for exact tengwar
+- **Inner date stamp:** Inter digits, opposite the primary inscription
+- **Live preview:** orbit / zoom / pan, metal finishes, cutaway, ink fill, lighting presets
+- **18k gold estimate:** rough mass / melt value from volume + spot price
+- **STL export:** binary, mm units, solid band with recessed engraving
 
 ## Quick start (local)
 
@@ -33,6 +37,8 @@ Open **http://127.0.0.1:5173** (see the terminal if the port differs).
 | `npm run dev` | Vite dev server + HMR |
 | `npm run build` | `tsc` typecheck + production bundle → `dist/` |
 | `npm run preview` | Serve `dist/` locally |
+| `npm test` | Preview vs final build-mode checks (real `buildRing`) |
+| `npm run typecheck` | TypeScript only |
 
 ## Using the studio
 
@@ -45,9 +51,9 @@ Open **http://127.0.0.1:5173** (see the terminal if the port differs).
 
 ### Print tips
 
-- **Quality → High** (~0.08 mm inner-wall edges on a US-7) is the practical sweet spot for jewelry resin masters.
-- **Quality → Extra** uses 960 circumferential segments (~0.06 mm inner-wall edges) for the finest inscription contours.
-- Engraving depth **0.25–0.4 mm**; text size **~1.0–1.6 mm** on typical 4–5 mm bands.
+- **Quality → High** (~0.08 mm inner-wall edges on a US-7) is the practical sweet spot for jewelry resin masters.
+- **Quality → Extra** uses 960 circumferential segments (~0.06 mm inner-wall edges) for finer inscription contours.
+- Engraving depth **0.25–0.4 mm**; text size **~1.0–1.6 mm** on typical 4–5 mm bands.
 - Prefer **SLA/DLP resin** for masters; metal FDM is a poor fit for fine tengwar.
 - Units are **millimeters**. Leave cutaway **off** for the exported solid.
 
@@ -65,6 +71,8 @@ wedding-ring-stl/
 │   ├── exportStl.ts        # Binary STL writer
 │   ├── goldEstimate.ts     # Volume / 18k estimate
 │   └── types.ts            # RingParams + defaults
+├── scripts/
+│   └── test-build-modes.mts
 ├── LICENSE                 # MIT (application source)
 ├── THIRD_PARTY_NOTICES.md  # Fonts & dependencies
 └── CONTRIBUTING.md
@@ -72,39 +80,40 @@ wedding-ring-stl/
 
 ## Contributing
 
-We welcome issues and pull requests. Start here:
+Issues and pull requests welcome.
 
-1. [CONTRIBUTING.md](./CONTRIBUTING.md) — setup, style, PR checklist  
-2. [Bug report](https://github.com/mcflyhq/wedding-ring-stl/issues/new?template=bug_report.yml) / [Feature request](https://github.com/mcflyhq/wedding-ring-stl/issues/new?template=feature_request.yml)  
+1. [CONTRIBUTING.md](./CONTRIBUTING.md) - setup, style, PR checklist
+2. [Bug report](https://github.com/mcflyhq/wedding-ring-stl/issues/new?template=bug_report.yml) / [Feature request](https://github.com/mcflyhq/wedding-ring-stl/issues/new?template=feature_request.yml)
 3. [Code of Conduct](./CODE_OF_CONDUCT.md)
 
 ```bash
-# Before opening a PR
 npm run build
+npm test
 # Manually: rebuild ring, toggle cutaway, export STL
 ```
 
 ## Security
 
-See [SECURITY.md](./SECURITY.md) for how to report vulnerabilities privately.
+See [SECURITY.md](./SECURITY.md) for private vulnerability reporting.
 
 ## License
 
-- **Application source code** is released under the **[MIT License](./LICENSE)**.
-- **Fonts and npm packages** retain their own licenses — see **[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)**.
-- **Tengwar Annatar** is freeware by Johan Winge with redistribution and commercial-use conditions; using Tolkien’s scripts commercially may require permission from the Tolkien Estate.
+- **Application source code** is under the **[MIT License](./LICENSE)**.
+- **Fonts and npm packages** keep their own licenses. See **[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)**.
+- **Tengwar Annatar** is freeware by Johan Winge with redistribution and commercial-use conditions. Using Tolkien's scripts commercially may require permission from the Tolkien Estate.
 
 This project is **not** affiliated with the Tolkien Estate, Middle-earth Enterprises, or Tecendil.
 
 ## Acknowledgments
 
 - [Three.js](https://threejs.org/) and [opentype.js](https://opentype.js.org/)
-- [Tengwar Annatar](https://www.dafont.com/tengwar-annatar.font) — Johan Winge  
-- [tengwarjs](https://github.com/kriskowal/tengwarjs) — Dan Smith encoding helpers  
-- Inter, Cinzel, and Uncial faces used under their respective open/font licenses  
-- Community tengwar modes and tooling (Tecendil, Glaemscribe, and others) for inspiration
+- [Tengwar Annatar](https://www.dafont.com/tengwar-annatar.font) (Johan Winge)
+- [tengwarjs](https://github.com/kriskowal/tengwarjs) (Dan Smith encoding helpers)
+- Inter, Cinzel, and Uncial faces under their respective font licenses
+- [arnog/tecendil-js](https://github.com/arnog/tecendil-js) mode format (inspiration for offline mode JSON)
 
 ## Maintainers
 
 - **Repository:** [mcflyhq/wedding-ring-stl](https://github.com/mcflyhq/wedding-ring-stl)
+- **Demo:** [wedding-ring-stl.vercel.app](https://wedding-ring-stl.vercel.app)
 - **Issues:** [GitHub Issues](https://github.com/mcflyhq/wedding-ring-stl/issues)

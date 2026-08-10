@@ -35,7 +35,7 @@ export function carveDateWithCsg(
     cutClone.dispose()
     return out
   } catch (err) {
-    console.warn('Date CSG carve failed — falling back to displacement only', err)
+    console.warn('Date CSG carve failed - falling back to displacement only', err)
     return bandGeom
   }
 }

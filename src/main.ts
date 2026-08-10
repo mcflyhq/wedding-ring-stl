@@ -31,7 +31,7 @@ let built: BuiltRing | null = null
 let showInk = true
 let lightPreset: LightPreset = 'midday'
 
-/** Monotonic build generation — stale async results are discarded. */
+/** Monotonic build generation - stale async results are discarded. */
 let buildGeneration = 0
 let building = false
 /** Latest params requested while a build was in flight. */
@@ -105,7 +105,7 @@ function setLoadingCopy(title: string, sub: string) {
   if (loadingSubEl) loadingSubEl.textContent = sub
 }
 
-/** Non-blocking corner chip — never steals focus from the panel. */
+/** Non-blocking corner chip - never steals focus from the panel. */
 function setBuildBusy(on: boolean, label = 'Updating…') {
   if (!buildBusyEl) return
   if (buildBusyLabelEl) buildBusyLabelEl.textContent = label
@@ -395,7 +395,7 @@ async function runBuild(nextParams: RingParams, mode: ViewBuildMode) {
     setLoading(true, true)
     setLoadingCopy('Forging your ring', 'Building geometry & inscriptions…')
   } else {
-    // Non-blocking chip only — never cover the form
+    // Non-blocking chip only - never cover the form
     setBuildBusy(true, mode === 'preview' ? 'Live preview…' : 'Refining…')
   }
 
@@ -411,7 +411,7 @@ async function runBuild(nextParams: RingParams, mode: ViewBuildMode) {
         setLoadingCopy('Still working…', 'Preparing the engraved preview')
       }
       setBuildBusy(true, 'Still building…')
-      toast('Preview is slow — try Draft quality', false)
+      toast('Preview is slow - try Draft quality', false)
     }
   }, safetyMs)
 
@@ -425,7 +425,7 @@ async function runBuild(nextParams: RingParams, mode: ViewBuildMode) {
       isCancelled: () => gen !== buildGeneration,
     })
 
-    // Stale generation — discard
+    // Stale generation - discard
     if (gen !== buildGeneration) {
       disposeBuiltRing(next)
       return
@@ -447,7 +447,7 @@ async function runBuild(nextParams: RingParams, mode: ViewBuildMode) {
     finishInitialLoad()
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
-      // Cancelled by newer generation — ignore
+      // Cancelled by newer generation - ignore
     } else {
       console.error(err)
       if (isInitialLoad) {
@@ -571,7 +571,7 @@ for (const id of geomLiveIds) {
   el.addEventListener('change', () => scheduleSettledNow())
 }
 
-// Metal — color only, no rebuild
+// Metal - color only, no rebuild
 $('metal').addEventListener('input', () => {
   applyCosmeticMetal(($('metal') as HTMLSelectElement).value as MetalFinish)
 })
@@ -579,7 +579,7 @@ $('metal').addEventListener('change', () => {
   applyCosmeticMetal(($('metal') as HTMLSelectElement).value as MetalFinish)
 })
 
-// Cutaway — clipping only
+// Cutaway - clipping only
 $('cutaway').addEventListener('change', () => {
   applyCosmeticCutaway(($('cutaway') as HTMLInputElement).checked)
 })

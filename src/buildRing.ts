@@ -8,7 +8,7 @@ export interface BuildStages {
   mode: BuildMode
   /** Vertex displacement ran for inscriptions (includes date on preview). */
   ranDisplacement: boolean
-  /** Expensive solid date CSG cavities — final/export only. */
+  /** Expensive solid date CSG cavities - final/export only. */
   ranDateCsg: boolean
   /** Wall-clock ms for this build (includes layout + carve). */
   durationMs: number
@@ -31,9 +31,9 @@ export interface BuiltRing {
 
 export interface BuildOptions {
   /**
-   * `preview` — interactive: draft-friendly, **skip date CSG**; date still recessed via displacement.
-   * `settled` — selected mesh quality for the viewport, still without blocking CSG.
-   * `final` — export-grade: user quality + solid date CSG cavities.
+   * `preview` - interactive: draft-friendly, **skip date CSG**; date still recessed via displacement.
+   * `settled` - selected mesh quality for the viewport, still without blocking CSG.
+   * `final` - export-grade: user quality + solid date CSG cavities.
    */
   mode?: BuildMode
   /** Override mesh quality (used for live draft while dragging). */
@@ -57,7 +57,7 @@ function metalMaterial(params: RingParams, clipped: THREE.Plane | null): THREE.M
   })
 }
 
-/** Darker fill for lettering — sits inside recessed pockets. */
+/** Darker fill for lettering - sits inside recessed pockets. */
 function inkMaterial(clipped: THREE.Plane | null): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
     color: 0x1c140a,
@@ -162,7 +162,7 @@ export function disposeBuiltRing(built: BuiltRing): void {
  * Build ring + inscription.
  *
  * Performance contract:
- * - **preview**: displacement for all inscriptions (including date) — metal recesses without CSG cost
+ * - **preview**: displacement for all inscriptions (including date) - metal recesses without CSG cost
  * - **settled**: selected mesh quality for the viewport, without CSG
  * - **final**: same displacement, then date CSG for solid export-grade cavities
  *
@@ -215,7 +215,7 @@ export async function buildRing(
     await yieldToMain()
     throwIfCancelled(isCancelled)
 
-    // 1) Displacement on clean lathe — Tengwar + date recesses (ink-off visibility)
+    // 1) Displacement on clean lathe - Tengwar + date recesses (ink-off visibility)
     if (layout && layout.polys.length > 0) {
       const displacementStart =
         typeof performance !== 'undefined' && performance.now
@@ -241,7 +241,7 @@ export async function buildRing(
 
     throwIfCancelled(isCancelled)
 
-    // 2) Date CSG — final/export only (expensive; skipped on live preview)
+    // 2) Date CSG - final/export only (expensive; skipped on live preview)
     const useDateCsg = mode === 'final' && !!layout?.dateCutter
     if (useDateCsg && layout?.dateCutter) {
       const dateCsgStart =

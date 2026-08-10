@@ -1,7 +1,7 @@
 /**
  * Helpers for Tengwar Annatar fonts.
  * Transcription is intentional: paste Tecendil Annatar keys in the advanced
- * fields — no automated orthographic mode in-app.
+ * fields - no automated orthographic mode in-app.
  */
 
 export function isTengwarFont(fontKey: string): boolean {

@@ -492,11 +492,11 @@ body {
 
 .loading-overlay.visible {
   opacity: 1;
-  /* Never block panel/sliders after boot — only dim the canvas */
+  /* Never block panel/sliders after boot - only dim the canvas */
   pointer-events: none;
 }
 
-/* First paint after hard refresh — solid cover so empty canvas never flashes */
+/* First paint after hard refresh - solid cover so empty canvas never flashes */
 .loading-overlay.initial {
   background:
     radial-gradient(ellipse 70% 50% at 50% 42%, rgba(201, 162, 39, 0.1), transparent 60%),
