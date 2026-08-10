@@ -21,8 +21,9 @@ import {
   setInkVisible,
   type LightPreset,
 } from './lighting'
+import { DimensionOverlay } from './dimensionOverlay'
 import { DEFAULT_PARAMS, RING_SIZE_PRESETS } from './types'
-import type { RingParams, MetalFinish } from './types'
+import type { BandProfile, RingParams, MetalFinish } from './types'
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -88,6 +89,9 @@ applyLightPreset(lightPreset, lights, scene, renderer)
 
 const ringGroup = new THREE.Group()
 scene.add(ringGroup)
+
+const dimOverlay = new DimensionOverlay(host)
+scene.add(dimOverlay.group)
 
 // ─── UI helpers ──────────────────────────────────────────────────────────────
 
@@ -212,6 +216,25 @@ function updateDimLabels() {
   $('val-text-depth').textContent = `${fmt(params.textDepthMm, 2)} mm`
   $('val-text-angle').textContent = `${Math.round(params.textAngleDeg)}°`
 
+  const waveAmp = document.getElementById('val-wave-amplitude')
+  if (waveAmp) waveAmp.textContent = `${fmt(params.waveAmplitudeMm, 2)} mm`
+  const wavePhase = document.getElementById('val-wave-phase')
+  if (wavePhase) wavePhase.textContent = `${Math.round(params.wavePhaseDeg)}°`
+  const waveSpan = document.getElementById('val-wave-span')
+  if (waveSpan) waveSpan.textContent = `${Math.round(params.waveSpanDeg)}°`
+  const waveSharp = document.getElementById('val-wave-sharpness')
+  if (waveSharp) waveSharp.textContent = fmt(params.waveSharpness, 2)
+
+  const wavePanel = document.getElementById('wave-controls')
+  if (wavePanel) wavePanel.hidden = params.bandProfile !== 'wave'
+  const profileHint = document.getElementById('profile-hint')
+  if (profileHint) {
+    profileHint.textContent =
+      params.bandProfile === 'wave'
+        ? 'Localized pinch · flat band elsewhere · domed outer · flat inner bore'
+        : 'Domed (D-shape) · rounded outer face · flat inner face'
+  }
+
   document.querySelectorAll('#size-presets .chip').forEach((el) => {
     const d = Number((el as HTMLElement).dataset.diameter)
     el.classList.toggle('active', Math.abs(d - params.innerDiameterMm) < 0.05)
@@ -221,7 +244,30 @@ function updateDimLabels() {
 function syncLabels() {
   updateDimLabels()
   updateGoldEstimate()
+  updateDimensionOverlay()
   void updateAnnatarPreview()
+}
+
+function updateDimensionOverlay() {
+  const m = dimOverlay.update(params)
+  // Surface key pinch measurement in the status bar for quick reading
+  if (m.isWave && params.waveAmplitudeMm > 0) {
+    const pin = ` · pinch full width <strong class="dim-readout">${fmt(m.pinchEnvelopeMm, 2)} mm</strong>`
+    const span = ` · span ${Math.round(m.pinchSpanDeg)}°`
+    // statsEl is also written by build pipeline; only set a dim hint attribute for merge
+    statsEl.dataset.pinch = `${fmt(m.pinchEnvelopeMm, 2)} mm @ ${Math.round(m.pinchSpanDeg)}°`
+    void pin
+    void span
+  } else {
+    delete statsEl.dataset.pinch
+  }
+  requestRender()
+}
+
+function appendPinchToStats(baseHtml: string): string {
+  const pinch = statsEl.dataset.pinch
+  if (!pinch) return baseHtml
+  return `${baseHtml} · pinch full width <strong class="dim-readout">${pinch}</strong>`
 }
 
 function readParamsFromUi(): RingParams {
@@ -244,6 +290,34 @@ function readParamsFromUi(): RingParams {
       4,
       DEFAULT_PARAMS.bandThicknessMm,
     ),
+    bandProfile: ($('bandProfile') as HTMLSelectElement).value as BandProfile,
+    waveAmplitudeMm: clampNum(
+      Number(($('waveAmplitudeMm') as HTMLInputElement).value),
+      0,
+      2.5,
+      DEFAULT_PARAMS.waveAmplitudeMm,
+    ),
+    waveCount: 1,
+    wavePhaseDeg: clampNum(
+      Number(($('wavePhaseDeg') as HTMLInputElement).value),
+      0,
+      360,
+      DEFAULT_PARAMS.wavePhaseDeg,
+    ),
+    waveSpanDeg: clampNum(
+      Number(($('waveSpanDeg') as HTMLInputElement).value),
+      40,
+      220,
+      DEFAULT_PARAMS.waveSpanDeg,
+    ),
+    waveSharpness: clampNum(
+      Number(($('waveSharpness') as HTMLInputElement).value),
+      0,
+      1,
+      DEFAULT_PARAMS.waveSharpness,
+    ),
+    waveAsymmetry: 0,
+    waveCharacter: 1,
     innerText: ($('innerText') as HTMLTextAreaElement).value,
     innerDateText: ($('innerDateText') as HTMLInputElement).value,
     innerTengwarKeys: ($('innerTengwarKeys') as HTMLTextAreaElement).value,
@@ -264,6 +338,14 @@ function writeParamsToUi(p: RingParams) {
   ;($('innerDiameterMm') as HTMLInputElement).value = String(p.innerDiameterMm)
   ;($('bandWidthMm') as HTMLInputElement).value = String(p.bandWidthMm)
   ;($('bandThicknessMm') as HTMLInputElement).value = String(p.bandThicknessMm)
+  ;($('bandProfile') as HTMLSelectElement).value = p.bandProfile
+  ;($('waveAmplitudeMm') as HTMLInputElement).value = String(p.waveAmplitudeMm)
+  ;($('waveCount') as HTMLInputElement).value = '1'
+  ;($('wavePhaseDeg') as HTMLInputElement).value = String(p.wavePhaseDeg)
+  ;($('waveSpanDeg') as HTMLInputElement).value = String(p.waveSpanDeg)
+  ;($('waveSharpness') as HTMLInputElement).value = String(p.waveSharpness)
+  ;($('waveAsymmetry') as HTMLInputElement).value = '0'
+  ;($('waveCharacter') as HTMLInputElement).value = '1'
   ;($('innerText') as HTMLTextAreaElement).value = p.innerText
   ;($('innerDateText') as HTMLInputElement).value = p.innerDateText
   ;($('innerTengwarKeys') as HTMLTextAreaElement).value = p.innerTengwarKeys
@@ -333,6 +415,14 @@ function paramsEqualGeom(a: RingParams, b: RingParams): boolean {
     a.innerDiameterMm === b.innerDiameterMm &&
     a.bandWidthMm === b.bandWidthMm &&
     a.bandThicknessMm === b.bandThicknessMm &&
+    a.bandProfile === b.bandProfile &&
+    a.waveAmplitudeMm === b.waveAmplitudeMm &&
+    a.waveCount === b.waveCount &&
+    a.wavePhaseDeg === b.wavePhaseDeg &&
+    a.waveSpanDeg === b.waveSpanDeg &&
+    a.waveSharpness === b.waveSharpness &&
+    a.waveAsymmetry === b.waveAsymmetry &&
+    a.waveCharacter === b.waveCharacter &&
     a.innerText === b.innerText &&
     a.innerDateText === b.innerDateText &&
     a.innerTengwarKeys === b.innerTengwarKeys &&
@@ -374,7 +464,9 @@ function scheduleBaseBandPreview(nextParams: RingParams) {
     clearRingGroup()
     ringGroup.add(blank.group)
     built = blank
-    statsEl.innerHTML = `Triangles: <strong>${blank.triangleCount.toLocaleString()}</strong> · shaping`
+    statsEl.innerHTML = appendPinchToStats(
+      `Triangles: <strong>${blank.triangleCount.toLocaleString()}</strong> · shaping`,
+    )
     requestRender()
   })
 }
@@ -402,6 +494,7 @@ async function runBuild(nextParams: RingParams, mode: ViewBuildMode) {
   params = nextParams
   updateGoldEstimate()
   updateDimLabels()
+  updateDimensionOverlay()
 
   // Only toast; do not flip `building` while work may still finish.
   const safetyMs = mode === 'preview' ? 3000 : 10000
@@ -443,7 +536,9 @@ async function runBuild(nextParams: RingParams, mode: ViewBuildMode) {
     requestRender()
     // Don't re-run applyLightPreset (full scene traverse) on every rebuild
     const tag = mode === 'preview' ? ' · live' : ''
-    statsEl.innerHTML = `Triangles: <strong>${next.triangleCount.toLocaleString()}</strong>${tag}`
+    statsEl.innerHTML = appendPinchToStats(
+      `Triangles: <strong>${next.triangleCount.toLocaleString()}</strong>${tag}`,
+    )
     finishInitialLoad()
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
@@ -508,6 +603,7 @@ function scheduleGeometryRebuild(
   params = next
   updateGoldEstimate()
   updateDimLabels()
+  updateDimensionOverlay()
   if (showBaseBand) scheduleBaseBandPreview(next)
 
   // New input always cancels the current heavy job so the UI never waits on it
@@ -554,6 +650,11 @@ const geomLiveIds = [
   'innerDiameterMm',
   'bandWidthMm',
   'bandThicknessMm',
+  'bandProfile',
+  'waveAmplitudeMm',
+  'wavePhaseDeg',
+  'waveSpanDeg',
+  'waveSharpness',
   'textDepthMm',
   'textSizeMm',
   'dateTextSizeMm',
@@ -561,12 +662,21 @@ const geomLiveIds = [
   'quality',
 ] as const
 
+const bandShapeIds = new Set([
+  'innerDiameterMm',
+  'bandWidthMm',
+  'bandThicknessMm',
+  'bandProfile',
+  'waveAmplitudeMm',
+  'wavePhaseDeg',
+  'waveSpanDeg',
+  'waveSharpness',
+])
+
 for (const id of geomLiveIds) {
   const el = $(id)
   el.addEventListener('input', () => {
-    const changesBandShape =
-      id === 'innerDiameterMm' || id === 'bandWidthMm' || id === 'bandThicknessMm'
-    scheduleGeometryRebuild('both', changesBandShape)
+    scheduleGeometryRebuild('both', bandShapeIds.has(id))
   })
   el.addEventListener('change', () => scheduleSettledNow())
 }
@@ -590,6 +700,11 @@ $('goldSpotUsd').addEventListener('change', () => updateGoldEstimate())
 $('showInk').addEventListener('change', () => {
   showInk = ($('showInk') as HTMLInputElement).checked
   if (built) setInkVisible(built.group, showInk)
+  requestRender()
+})
+
+$('showDimensions').addEventListener('change', () => {
+  dimOverlay.setVisible(($('showDimensions') as HTMLInputElement).checked)
   requestRender()
 })
 
@@ -667,7 +782,9 @@ async function doExport() {
     setInkVisible(final.group, showInk)
     applyLightPreset(lightPreset, lights, scene, renderer)
     requestRender()
-    statsEl.innerHTML = `Triangles: <strong>${final.triangleCount.toLocaleString()}</strong>`
+    statsEl.innerHTML = appendPinchToStats(
+      `Triangles: <strong>${final.triangleCount.toLocaleString()}</strong>`,
+    )
     toast(`Exported ${filename}`)
   } catch (err) {
     console.error(err)
@@ -696,6 +813,7 @@ function onResize() {
   camera.aspect = w / h
   camera.updateProjectionMatrix()
   renderer.setSize(w, h)
+  dimOverlay.resize(w, h)
   requestRender()
 }
 window.addEventListener('resize', onResize)
@@ -730,6 +848,7 @@ function renderFrame() {
   renderRequested = false
   const controlsChanged = controls.update()
   renderer.render(scene, camera)
+  dimOverlay.render(scene, camera)
   if (controlsChanged) requestRender()
 }
 
@@ -747,7 +866,10 @@ setLoadingCopy('Forging your ring', 'Building geometry & inscriptions…')
 const initialBand = buildBlankRing(params)
 ringGroup.add(initialBand.group)
 built = initialBand
-statsEl.innerHTML = `Triangles: <strong>${initialBand.triangleCount.toLocaleString()}</strong> · base`
+updateDimensionOverlay()
+statsEl.innerHTML = appendPinchToStats(
+  `Triangles: <strong>${initialBand.triangleCount.toLocaleString()}</strong> · base`,
+)
 finishInitialLoad()
 requestRender()
 

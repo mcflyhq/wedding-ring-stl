@@ -8,15 +8,22 @@ const MAX_BAND_CACHE = 8
 const bandCache = new Map<string, THREE.BufferGeometry>()
 const bandOrder: string[] = []
 
-/** Bump when lathe solid winding / topology changes so stale caches are dropped. */
-const BAND_CACHE_VERSION = 2
+/** Bump when lathe solid winding / topology / wave silhouette changes. */
+const BAND_CACHE_VERSION = 7
 
-function bandKey(params: Pick<RingParams, 'quality' | 'innerDiameterMm' | 'bandWidthMm' | 'bandThicknessMm'>): string {
+function bandKey(params: RingParams): string {
   // Round lightly so tiny float noise from number inputs doesn't thrash cache
   const d = Math.round(params.innerDiameterMm * 100) / 100
   const w = Math.round(params.bandWidthMm * 100) / 100
   const t = Math.round(params.bandThicknessMm * 100) / 100
-  return `v${BAND_CACHE_VERSION}|${params.quality}|${d}|${w}|${t}`
+  if (params.bandProfile !== 'wave') {
+    return `v${BAND_CACHE_VERSION}|d|${params.quality}|${d}|${w}|${t}`
+  }
+  const amp = Math.round(params.waveAmplitudeMm * 100) / 100
+  const phase = Math.round(params.wavePhaseDeg * 10) / 10
+  const span = Math.round(params.waveSpanDeg * 10) / 10
+  const sharp = Math.round(params.waveSharpness * 100) / 100
+  return `v${BAND_CACHE_VERSION}|wave|${params.quality}|${d}|${w}|${t}|${amp}|${phase}|${span}|${sharp}`
 }
 
 /**

@@ -1,13 +1,48 @@
 export type MetalFinish = 'gold' | 'rose-gold' | 'silver' | 'platinum' | 'black'
 export type TextSurface = 'inner' | 'outer'
+/** Classic constant-width D-profile, or sculpted wave silhouette (draft-inspired). */
+export type BandProfile = 'd' | 'wave'
 
 export interface RingParams {
   /** Inner diameter in millimeters (finger size) */
   innerDiameterMm: number
-  /** Band width along the finger axis */
+  /** Band width along the finger axis (mean width for wave profile) */
   bandWidthMm: number
   /** Wall thickness of the band (radial) */
   bandThicknessMm: number
+
+  /**
+   * Band silhouette style.
+   * - `d`: classic constant-width domed (D) profile
+   * - `wave`: variable axial edges from the organic top-view draft
+   */
+  bandProfile: BandProfile
+  /**
+   * Peak axial excursion of the localized pinch (mm).
+   * 0 → classic constant-width D. Typical range 0.6–1.6 mm.
+   */
+  waveAmplitudeMm: number
+  /**
+   * Kept for cache/API compatibility. Always one pinch feature (ignored).
+   */
+  waveCount: number
+  /** Angular center of the pinch around the finger (degrees). */
+  wavePhaseDeg: number
+  /**
+   * How much of the circumference the pinch occupies (degrees).
+   * Rest of the band stays a flat classic D. Typical 70–140°.
+   */
+  waveSpanDeg: number
+  /**
+   * Corner hardness of the pinch motif only (does not change amplitude).
+   * 1 = sharp polyline breaks; 0 = smooth spline through the same peaks —
+   * pinch full width / amplitude stay locked.
+   */
+  waveSharpness: number
+  /** Unused (kept for API / cache keys). */
+  waveAsymmetry: number
+  /** Unused (kept for API / cache keys). */
+  waveCharacter: number
 
   /** Primary inner inscription (Latin reference / or Latin face text) */
   innerText: string
@@ -49,8 +84,17 @@ export interface RingParams {
 
 export const DEFAULT_PARAMS: RingParams = {
   innerDiameterMm: 17.3,
-  bandWidthMm: 4.5,
+  bandWidthMm: 5.2,
   bandThicknessMm: 1.6,
+  bandProfile: 'wave',
+  // Localized pinch: hard waist in one sector only; rest of band flat
+  waveAmplitudeMm: 1.25,
+  waveCount: 1,
+  wavePhaseDeg: 0,
+  waveSpanDeg: 100,
+  waveSharpness: 0.45,
+  waveAsymmetry: 0,
+  waveCharacter: 1,
   innerText: '',
   innerDateText: '',
   outerText: '',

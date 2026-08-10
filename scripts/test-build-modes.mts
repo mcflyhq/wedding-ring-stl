@@ -36,6 +36,8 @@ globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
 function fixedParams(): RingParams {
   return {
     ...DEFAULT_PARAMS,
+    // Classic D for deterministic engraving regression; wave is covered by blank mesh path.
+    bandProfile: 'd',
     quality: 'draft', // keep CI fast; still exercises full stage path
     cutaway: false,
     innerText: 'test',
@@ -201,6 +203,8 @@ async function main(): Promise<void> {
   // --- Real first-load text, then selected-quality viewport from cached layout ---
   const defaultPreviewParams = {
     ...DEFAULT_PARAMS,
+    // Classic D for engraving/perf regressions (wave densifies pinch sector)
+    bandProfile: 'd' as const,
     innerText: 'Além do universo, em perpetuidade.',
     innerDateText: '27.09.2026',
     quality: 'draft' as const,
@@ -254,8 +258,9 @@ async function main(): Promise<void> {
   assert(highSettled.stages.ranDateCsg === false, 'high viewport must skip date CSG')
   assert(highMaxGapMs < 150, 'high viewport should yield before a 150 ms long task')
 
-  const highBlank = buildBlankRing(defaultPreviewParams, 'high')
-  const extraBlank = buildBlankRing(defaultPreviewParams, 'extra')
+  // Classic D has fixed radial counts (wave injects motif corners, so ratio ≠ 960/640).
+  const highBlank = buildBlankRing({ ...defaultPreviewParams, bandProfile: 'd' }, 'high')
+  const extraBlank = buildBlankRing({ ...defaultPreviewParams, bandProfile: 'd' }, 'extra')
   assert(
     extraBlank.triangleCount === highBlank.triangleCount * 1.5,
     'extra uses 960 radial segments versus high at 640',

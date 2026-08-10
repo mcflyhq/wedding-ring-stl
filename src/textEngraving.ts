@@ -2,7 +2,13 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import type { Font, Path } from 'opentype.js'
 import { loadDateFont, loadRingFont } from './fontLoader'
-import { outerDomeFrame } from './ringGeometry'
+import {
+  bandEdgesAt,
+  maxBandHalfExtentMm,
+  minBandWidthMm,
+  outerDomeFrame,
+  type WaveEdgeParams,
+} from './ringGeometry'
 import type { RingParams, TextSurface } from './types'
 import { resolveInscriptionText } from './tengwarTranscribe'
 
@@ -10,7 +16,10 @@ import { resolveInscriptionText } from './tengwarTranscribe'
 interface DomeParams {
   innerR: number
   thickness: number
+  /** Mean half-width (fallback when θ is unknown). */
   halfW: number
+  /** Wave / profile edges for local section at each angle. */
+  edgeParams: WaveEdgeParams
 }
 
 /** Curve tessellation for ExtrudeGeometry - smooth Annatar + Inter digits. */
@@ -192,6 +201,14 @@ function textLayoutKey(params: RingParams): string {
     params.innerDiameterMm,
     params.bandWidthMm,
     params.bandThicknessMm,
+    params.bandProfile,
+    params.waveAmplitudeMm,
+    params.waveCount,
+    params.wavePhaseDeg,
+    params.waveSpanDeg,
+    params.waveSharpness,
+    params.waveAsymmetry,
+    params.waveCharacter,
     params.innerText,
     params.innerDateText,
     params.innerTengwarKeys,
@@ -420,7 +437,14 @@ async function layoutTextRun(
         })
         cutGeom.translate(-cx, -cy, 0)
         cutterParts.push(
-          bendDateCutter(cutGeom, radius, angleRad, angularDirection, depthMm),
+          bendDateCutter(
+            cutGeom,
+            radius,
+            angleRad,
+            angularDirection,
+            depthMm,
+            dome.edgeParams,
+          ),
         )
         cutGeom.dispose()
       }
@@ -466,10 +490,11 @@ export async function buildTextLayout(
   const cached = getCachedTextLayout(cacheKey)
   if (cached) return cached
 
-  const sizeMm = Math.min(params.textSizeMm, params.bandWidthMm * 0.55)
+  const usableWidth = minBandWidthMm(params)
+  const sizeMm = Math.min(params.textSizeMm, usableWidth * 0.55)
   const dateSizeMm = Math.min(
     params.dateTextSizeMm > 0 ? params.dateTextSizeMm : sizeMm * 0.9,
-    params.bandWidthMm * 0.55,
+    usableWidth * 0.55,
   )
   const depthMm = Math.min(params.textDepthMm, params.bandThicknessMm * 0.75)
   const startAngle = (params.textAngleDeg * Math.PI) / 180
@@ -482,6 +507,7 @@ export async function buildTextLayout(
     innerR,
     thickness: params.bandThicknessMm,
     halfW: params.bandWidthMm / 2,
+    edgeParams: params,
   }
 
   // Date is centered diametrically opposite the primary (center-aligned) run.
@@ -646,12 +672,21 @@ function bendOntoSurface(
     const sinA = Math.sin(angle)
 
     if (surface === 'inner') {
-      // Into metal = larger r (never into the hole)
+      // Into metal = larger r (never into the hole). Offset y by local mid so
+      // glyphs sit centered on the sculpted section, not the global equator.
+      const edges = bandEdgesAt(angle, dome.edgeParams)
       const radial = radius + along
-      pos.setXYZ(i, cosA * radial, sinA * radial, v.y)
+      pos.setXYZ(i, cosA * radial, sinA * radial, v.y + edges.zMid)
     } else {
-      const zAx = v.y
-      const { r: rSurf, ur, uz } = outerDomeFrame(zAx, dome.innerR, dome.thickness, dome.halfW)
+      const edges = bandEdgesAt(angle, dome.edgeParams)
+      const zAx = v.y + edges.zMid
+      const { r: rSurf, ur, uz } = outerDomeFrame(
+        zAx,
+        dome.innerR,
+        dome.thickness,
+        edges.halfW,
+        edges.zMid,
+      )
       const r = rSurf - along * ur
       const zOut = zAx - along * uz
       pos.setXYZ(i, cosA * r, sinA * r, zOut)
@@ -674,6 +709,7 @@ function bendDateCutter(
   startAngleRad: number,
   angularDirection: AngularDirection,
   pocketDepth: number,
+  edgeParams: WaveEdgeParams,
 ): THREE.BufferGeometry {
   const geom = geometry.clone()
   const pos = geom.attributes.position as THREE.BufferAttribute
@@ -694,7 +730,8 @@ function bendDateCutter(
     // t=0 at free side (into hole), t=1 deep in metal
     const along = -intoHole + t * (intoMetal + intoHole)
     const radial = radius + along
-    pos.setXYZ(i, Math.cos(angle) * radial, Math.sin(angle) * radial, v.y)
+    const zMid = bandEdgesAt(angle, edgeParams).zMid
+    pos.setXYZ(i, Math.cos(angle) * radial, Math.sin(angle) * radial, v.y + zMid)
   }
 
   pos.needsUpdate = true
@@ -728,7 +765,7 @@ export async function engraveByDisplacement(
   const outerR = innerR + thickness
   const depth = Math.min(params.textDepthMm, thickness * 0.75)
   const baseAngle = (params.textAngleDeg * Math.PI) / 180
-  const halfBand = params.bandWidthMm / 2
+  const maxHalf = maxBandHalfExtentMm(params)
 
   const innerGroups = groupPolysByAngle(polys.filter((p) => p.surface === 'inner'))
   const outerGroups = groupPolysByAngle(polys.filter((p) => p.surface === 'outer'))
@@ -756,9 +793,12 @@ export async function engraveByDisplacement(
 
     v.fromBufferAttribute(pos, i)
     const r = Math.hypot(v.x, v.y)
-    if (Math.abs(v.z) > halfBand + 0.05) continue
+    if (Math.abs(v.z) > maxHalf + 0.08) continue
 
     const theta = Math.atan2(v.y, v.x)
+    const edges = bandEdgesAt(theta, params)
+    // Flat layout y is relative to local section mid (glyphs centered on local width)
+    const localY = v.z - edges.zMid
 
     // Invert each run's bend direction. Primary inner and outer use +1; the
     // date keeps its established -1 orientation.
@@ -776,13 +816,13 @@ export async function engraveByDisplacement(
         if (
           a0 < group.minX - softMm ||
           a0 > group.maxX + softMm ||
-          v.z < group.minY - softMm ||
-          v.z > group.maxY + softMm
+          localY < group.minY - softMm ||
+          localY > group.maxY + softMm
         ) {
           continue
         }
         for (const poly of group.polys) {
-          if (hitPolySoft(a0, v.z, poly, sample, softMm)) {
+          if (hitPolySoft(a0, localY, poly, sample, softMm)) {
             hit = true
             break
           }
@@ -802,7 +842,13 @@ export async function engraveByDisplacement(
     }
 
     if (outerGroups.length) {
-      const { r: rSurf, ur, uz } = outerDomeFrame(v.z, innerR, thickness, halfBand)
+      const { r: rSurf, ur, uz } = outerDomeFrame(
+        v.z,
+        innerR,
+        thickness,
+        edges.halfW,
+        edges.zMid,
+      )
       if (Math.abs(r - rSurf) > depth + 0.25) continue
 
       let hit = false
@@ -817,13 +863,13 @@ export async function engraveByDisplacement(
         if (
           a0 < group.minX - softMm ||
           a0 > group.maxX + softMm ||
-          v.z < group.minY - softMm ||
-          v.z > group.maxY + softMm
+          localY < group.minY - softMm ||
+          localY > group.maxY + softMm
         ) {
           continue
         }
         for (const poly of group.polys) {
-          if (hitPolySoft(a0, v.z, poly, sample, softMm)) {
+          if (hitPolySoft(a0, localY, poly, sample, softMm)) {
             hit = true
             break
           }

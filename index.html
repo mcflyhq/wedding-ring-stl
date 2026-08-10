@@ -71,7 +71,7 @@
                   min="1.5"
                   max="12"
                   step="0.1"
-                  value="4.5"
+                  value="5.2"
                   inputmode="decimal"
                 />
               </div>
@@ -88,7 +88,81 @@
                 inputmode="decimal"
               />
             </div>
-            <p class="hint">Domed (D-shape) - rounded outer face, flat inner face</p>
+            <div class="field">
+              <label for="bandProfile">Band silhouette</label>
+              <select id="bandProfile">
+                <option value="wave" selected>Wave silhouette (organic)</option>
+                <option value="d">Classic D-profile</option>
+              </select>
+            </div>
+            <div id="wave-controls">
+              <div class="field">
+                <label>
+                  Pinch amplitude
+                  <span class="value" id="val-wave-amplitude">1.25 mm</span>
+                </label>
+                <input
+                  type="range"
+                  id="waveAmplitudeMm"
+                  min="0"
+                  max="2.5"
+                  step="0.05"
+                  value="1.25"
+                />
+              </div>
+              <input type="hidden" id="waveCount" value="1" />
+              <input type="hidden" id="waveAsymmetry" value="0" />
+              <input type="hidden" id="waveCharacter" value="1" />
+              <div class="field">
+                <label>
+                  Pinch position
+                  <span class="value" id="val-wave-phase">0°</span>
+                </label>
+                <input
+                  type="range"
+                  id="wavePhaseDeg"
+                  min="0"
+                  max="360"
+                  step="1"
+                  value="0"
+                />
+              </div>
+              <div class="field">
+                <label>
+                  Pinch width
+                  <span class="value" id="val-wave-span">100°</span>
+                </label>
+                <input
+                  type="range"
+                  id="waveSpanDeg"
+                  min="40"
+                  max="220"
+                  step="1"
+                  value="100"
+                />
+              </div>
+              <div class="field">
+                <label>
+                  Corner hardness
+                  <span class="value" id="val-wave-sharpness">0.45</span>
+                </label>
+                <input
+                  type="range"
+                  id="waveSharpness"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value="0.45"
+                />
+              </div>
+              <p class="hint">
+                Pinch sits in one sector only — the rest of the band stays a flat D.
+                Corner hardness only rounds the kink; amplitude and pinch full width stay put.
+              </p>
+            </div>
+            <p class="hint" id="profile-hint">
+              Localized pinch · flat band elsewhere · domed outer · flat inner bore
+            </p>
           </section>
 
           <section class="section gold-estimate" id="gold-estimate">
@@ -266,6 +340,13 @@
             </label>
             <p class="hint" style="margin-bottom: 8px">
               Dark fill in recesses (preview only - not in STL). Hide to see pure metal carve.
+            </p>
+            <label class="toggle-row">
+              <span>Show dimensions</span>
+              <input type="checkbox" id="showDimensions" checked />
+            </label>
+            <p class="hint" style="margin-bottom: 8px">
+              Live mm / angle callouts in the 3D view (pinch full width, span, band size).
             </p>
             <label class="toggle-row">
               <span>Cutaway (inspect engraving)</span>

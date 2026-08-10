@@ -643,6 +643,71 @@ body {
   color: #e8b4ac;
 }
 
+/* ─── 3D dimension labels (CSS2D) ─── */
+.dim-label-layer {
+  overflow: hidden;
+}
+
+.dim-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(12, 11, 10, 0.82);
+  border: 1px solid rgba(232, 213, 163, 0.45);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  transform: translateZ(0);
+}
+
+.dim-label .dim-name {
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
+.dim-label .dim-val {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--gold-soft);
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.dim-label-pinch {
+  border-color: rgba(255, 184, 77, 0.65);
+  background: rgba(28, 18, 6, 0.88);
+}
+
+.dim-label-pinch .dim-val {
+  color: #ffb84d;
+  font-size: 0.88rem;
+}
+
+.dim-label-accent {
+  border-color: rgba(201, 162, 39, 0.5);
+}
+
+.dim-label-angle {
+  border-color: rgba(158, 203, 255, 0.55);
+}
+
+.dim-label-angle .dim-val {
+  color: #9ecbff;
+}
+
+.dim-readout {
+  font-variant-numeric: tabular-nums;
+  color: var(--gold-soft);
+}
+
 /* Mobile: panel collapses */
 @media (max-width: 720px) {
   .panel {
