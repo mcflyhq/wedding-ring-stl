@@ -5,7 +5,7 @@
   "description": "Browser-based parametric wedding ring designer with Tengwar/Latin engraving and print-ready STL export",
   "type": "module",
   "license": "MIT",
-  "author": "Guillaume Palayer",
+  "author": "mcflyhq",
   "keywords": [
     "wedding-ring",
     "stl",

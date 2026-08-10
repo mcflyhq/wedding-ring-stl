@@ -24,10 +24,9 @@ sensitive and never commit them.
 Please **do not** open a public issue for security problems that could put
 users at risk.
 
-1. Prefer [GitHub Security Advisories](https://docs.github.com/en/code-security/security-advisories)
+1. Prefer [GitHub Security Advisories](https://github.com/mcflyhq/wedding-ring-stl/security/advisories/new)
    on this repository, or
-2. Open a private report via the repo Security tab, or email the maintainer listed
-   on https://github.com/mcflyhq (profile contact).
+2. Open a private report via the repo **Security** tab on GitHub.
 
 Include:
 
