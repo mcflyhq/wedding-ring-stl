@@ -1,18 +1,20 @@
 import * as THREE from 'three'
-import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg'
 import { getBlankBandGeometry } from './buildCache'
-import { buildTextLayout, engraveByDisplacement } from './textEngraving'
+import type { TextLayout } from './textEngraving'
 import type { RingParams } from './types'
 import { METAL_COLORS } from './types'
 
 export interface BuildStages {
-  mode: 'preview' | 'final'
+  mode: BuildMode
   /** Vertex displacement ran for inscriptions (includes date on preview). */
   ranDisplacement: boolean
   /** Expensive solid date CSG cavities — final/export only. */
   ranDateCsg: boolean
   /** Wall-clock ms for this build (includes layout + carve). */
   durationMs: number
+  layoutMs: number
+  displacementMs: number
+  dateCsgMs: number
 }
 
 export interface BuiltRing {
@@ -30,14 +32,17 @@ export interface BuiltRing {
 export interface BuildOptions {
   /**
    * `preview` — interactive: draft-friendly, **skip date CSG**; date still recessed via displacement.
+   * `settled` — selected mesh quality for the viewport, still without blocking CSG.
    * `final` — export-grade: user quality + solid date CSG cavities.
    */
-  mode?: 'preview' | 'final'
+  mode?: BuildMode
   /** Override mesh quality (used for live draft while dragging). */
   qualityOverride?: RingParams['quality']
   /** Return true to abandon mid-build (generation cancelled). */
   isCancelled?: () => boolean
 }
+
+export type BuildMode = 'preview' | 'settled' | 'final'
 
 function metalMaterial(params: RingParams, clipped: THREE.Plane | null): THREE.MeshStandardMaterial {
   const color = METAL_COLORS[params.metal]
@@ -83,47 +88,63 @@ function makeCutawayPlane(params: RingParams): THREE.Plane | null {
   return new THREE.Plane(new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0), 0)
 }
 
-/**
- * CSG-subtract solid date digits from the band → full solid cavities.
- * Must run on a correctly wound solid (see ringGeometry profile winding).
- */
-export function carveDateWithCsg(
-  bandGeom: THREE.BufferGeometry,
-  cutter: THREE.BufferGeometry,
-): THREE.BufferGeometry {
-  try {
-    const ringClone = bandGeom.clone()
-    const cutClone = cutter.clone()
-    ringClone.computeVertexNormals()
-    cutClone.computeVertexNormals()
-
-    const ringBrush = new Brush(ringClone)
-    ringBrush.updateMatrixWorld(true)
-    ringBrush.prepareGeometry()
-
-    const cutBrush = new Brush(cutClone)
-    cutBrush.updateMatrixWorld(true)
-    cutBrush.prepareGeometry()
-
-    const evaluator = new Evaluator()
-    evaluator.useGroups = false
-    const result = evaluator.evaluate(ringBrush, cutBrush, SUBTRACTION)
-    const out = result.geometry
-    out.computeVertexNormals()
-
-    ringClone.dispose()
-    cutClone.dispose()
-    return out
-  } catch (err) {
-    console.warn('Date CSG carve failed — falling back to displacement only', err)
-    return bandGeom
-  }
-}
-
-function disposeLayout(layout: Awaited<ReturnType<typeof buildTextLayout>>): void {
+function disposeLayout(layout: TextLayout | null): void {
   if (!layout) return
   layout.dateCutter?.dispose()
   for (const g of layout.previewGeometries) g.dispose()
+}
+
+function triangleCount(geometry: THREE.BufferGeometry): number {
+  const index = geometry.index
+  return index
+    ? index.count / 3
+    : (geometry.getAttribute('position')?.count ?? 0) / 3
+}
+
+/**
+ * Produce the visible base band without loading fonts or engraving code.
+ * Used for the first paint so a manipulable ring appears immediately.
+ */
+export function buildBlankRing(
+  params: RingParams,
+  quality: RingParams['quality'] = 'draft',
+): BuiltRing {
+  const t0 =
+    typeof performance !== 'undefined' && performance.now
+      ? performance.now()
+      : Date.now()
+  const workParams = { ...params, quality }
+  const geometry = getBlankBandGeometry(workParams)
+  const cutawayPlane = makeCutawayPlane(params)
+  const mesh = new THREE.Mesh(geometry, metalMaterial(params, cutawayPlane))
+  mesh.castShadow = true
+  mesh.receiveShadow = true
+  mesh.name = 'wedding-ring-band'
+
+  const group = new THREE.Group()
+  group.name = 'wedding-ring'
+  group.add(mesh)
+
+  const t1 =
+    typeof performance !== 'undefined' && performance.now
+      ? performance.now()
+      : Date.now()
+  return {
+    group,
+    exportMesh: mesh,
+    geometry,
+    triangleCount: Math.round(triangleCount(geometry)),
+    cutawayPlane,
+    stages: {
+      mode: 'preview',
+      ranDisplacement: false,
+      ranDateCsg: false,
+      durationMs: Math.round(t1 - t0),
+      layoutMs: 0,
+      displacementMs: 0,
+      dateCsgMs: 0,
+    },
+  }
 }
 
 /** Dispose a built ring that was superseded by a newer generation. */
@@ -142,6 +163,7 @@ export function disposeBuiltRing(built: BuiltRing): void {
  *
  * Performance contract:
  * - **preview**: displacement for all inscriptions (including date) — metal recesses without CSG cost
+ * - **settled**: selected mesh quality for the viewport, without CSG
  * - **final**: same displacement, then date CSG for solid export-grade cavities
  *
  * Order: displace on clean lathe first, then optional CSG (avoids densifying mesh before Tengwar walk).
@@ -162,9 +184,12 @@ export async function buildRing(
     : params
 
   let bandGeom = getBlankBandGeometry(workParams)
-  let layout: Awaited<ReturnType<typeof buildTextLayout>> = null
+  let layout: TextLayout | null = null
   let ranDisplacement = false
   let ranDateCsg = false
+  let layoutMs = 0
+  let displacementMs = 0
+  let dateCsgMs = 0
 
   try {
     throwIfCancelled(isCancelled)
@@ -172,7 +197,19 @@ export async function buildRing(
     await yieldToMain()
     throwIfCancelled(isCancelled)
 
-    layout = await buildTextLayout(workParams)
+    const layoutStart =
+      typeof performance !== 'undefined' && performance.now
+        ? performance.now()
+        : Date.now()
+    const { buildTextLayout, engraveByDisplacement } = await import('./textEngraving')
+    throwIfCancelled(isCancelled)
+
+    layout = await buildTextLayout(workParams, isCancelled)
+    layoutMs = Math.round(
+      (typeof performance !== 'undefined' && performance.now
+        ? performance.now()
+        : Date.now()) - layoutStart,
+    )
     throwIfCancelled(isCancelled)
 
     await yieldToMain()
@@ -180,6 +217,10 @@ export async function buildRing(
 
     // 1) Displacement on clean lathe — Tengwar + date recesses (ink-off visibility)
     if (layout && layout.polys.length > 0) {
+      const displacementStart =
+        typeof performance !== 'undefined' && performance.now
+          ? performance.now()
+          : Date.now()
       const next = await engraveByDisplacement(
         bandGeom,
         layout.polys,
@@ -187,6 +228,11 @@ export async function buildRing(
         isCancelled,
       )
       ranDisplacement = true
+      displacementMs = Math.round(
+        (typeof performance !== 'undefined' && performance.now
+          ? performance.now()
+          : Date.now()) - displacementStart,
+      )
       if (next !== bandGeom) {
         bandGeom.dispose()
         bandGeom = next
@@ -198,10 +244,21 @@ export async function buildRing(
     // 2) Date CSG — final/export only (expensive; skipped on live preview)
     const useDateCsg = mode === 'final' && !!layout?.dateCutter
     if (useDateCsg && layout?.dateCutter) {
+      const dateCsgStart =
+        typeof performance !== 'undefined' && performance.now
+          ? performance.now()
+          : Date.now()
       await yieldToMain()
+      throwIfCancelled(isCancelled)
+      const { carveDateWithCsg } = await import('./dateCsg')
       throwIfCancelled(isCancelled)
       const carved = carveDateWithCsg(bandGeom, layout.dateCutter)
       ranDateCsg = true // path entered (success or CSG fallback still marks stage)
+      dateCsgMs = Math.round(
+        (typeof performance !== 'undefined' && performance.now
+          ? performance.now()
+          : Date.now()) - dateCsgStart,
+      )
       if (carved !== bandGeom) {
         bandGeom.dispose()
         bandGeom = carved
@@ -238,10 +295,7 @@ export async function buildRing(
       layout.previewGeometries = []
     }
 
-    const index = bandGeom.index
-    const triCount = index
-      ? index.count / 3
-      : (bandGeom.getAttribute('position')?.count ?? 0) / 3
+    const triCount = triangleCount(bandGeom)
 
     let inkTris = 0
     group.traverse((obj) => {
@@ -271,6 +325,9 @@ export async function buildRing(
         ranDisplacement,
         ranDateCsg,
         durationMs: Math.round(t1 - t0),
+        layoutMs,
+        displacementMs,
+        dateCsgMs,
       },
     }
   } catch (err) {

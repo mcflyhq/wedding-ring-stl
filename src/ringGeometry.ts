@@ -3,7 +3,7 @@ import type { RingParams } from './types'
 
 /**
  * Circumferential segments. Kept bounded so the browser stays responsive.
- * High ≈ 0.08 mm edges on a US-7 ring — good for jewelry resin / casting masters.
+ * High ≈ 0.08 mm and Extra ≈ 0.06 mm inner-wall edges on a US-7 ring.
  */
 function qualitySegments(quality: RingParams['quality']): number {
   switch (quality) {
@@ -11,6 +11,8 @@ function qualitySegments(quality: RingParams['quality']): number {
       return 180
     case 'high':
       return 640
+    case 'extra':
+      return 960
     default:
       return 360
   }
@@ -22,6 +24,7 @@ function innerWallSteps(quality: RingParams['quality'], width: number): number {
     case 'draft':
       return Math.max(24, Math.ceil(width * 12))
     case 'high':
+    case 'extra':
       return Math.max(48, Math.ceil(width * 22))
     default:
       return Math.max(36, Math.ceil(width * 16))
@@ -48,7 +51,11 @@ function buildDomedProfile(
   // Outer semi-ellipse bottom → top (ang -π/2 → +π/2)
   const arcSteps = Math.max(
     48,
-    Math.ceil(Math.PI * Math.max(thickness, halfW) * (quality === 'high' ? 20 : 12)),
+    Math.ceil(
+      Math.PI *
+        Math.max(thickness, halfW) *
+        (quality === 'high' || quality === 'extra' ? 20 : 12),
+    ),
   )
   for (let i = 0; i <= arcSteps; i++) {
     const t = i / arcSteps

@@ -42,7 +42,7 @@ export interface RingParams {
   /** Preview metal color */
   metal: MetalFinish
   /** Mesh resolution quality */
-  quality: 'draft' | 'normal' | 'high'
+  quality: 'draft' | 'normal' | 'high' | 'extra'
   /** Show cross-section cut for inspecting the engraving */
   cutaway: boolean
 }
@@ -51,8 +51,8 @@ export const DEFAULT_PARAMS: RingParams = {
   innerDiameterMm: 17.3,
   bandWidthMm: 4.5,
   bandThicknessMm: 1.6,
-  innerText: 'Além do universo, em perpetuidade.',
-  innerDateText: '27.09.2026',
+  innerText: '',
+  innerDateText: '',
   outerText: '',
   textDepthMm: 0.35,
   textSizeMm: 1.5,

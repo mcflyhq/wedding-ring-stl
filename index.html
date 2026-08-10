@@ -5,11 +5,26 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>One Ring — Wedding Ring STL Studio</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=Cinzel:wght@400;600&display=swap"
-      rel="stylesheet"
+      rel="preload"
+      href="/fonts/CinzelDecorative-Regular.ttf"
+      as="font"
+      type="font/ttf"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/TengwarAnnatar-Italic.ttf"
+      as="font"
+      type="font/ttf"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/Inter-Regular.ttf"
+      as="font"
+      type="font/ttf"
+      crossorigin
     />
   </head>
   <body>
@@ -129,7 +144,7 @@
             </div>
             <div class="field">
               <label for="innerText">Inner text (Latin)</label>
-              <textarea id="innerText" spellcheck="false">Além do universo, em perpetuidade.</textarea>
+              <textarea id="innerText" spellcheck="false"></textarea>
               <p class="hint" style="margin-top: 6px">
                 Reference / Latin face. For Tengwar Annatar, paste Tecendil keys in Advanced below.
               </p>
@@ -143,7 +158,6 @@
               <input
                 type="text"
                 id="innerDateText"
-                value="27.09.2026"
                 placeholder="27.09.2026"
                 spellcheck="false"
                 autocomplete="off"
@@ -231,9 +245,10 @@
             <div class="field">
               <label>Mesh quality</label>
               <select id="quality">
-                <option value="draft">Draft (fast)</option>
-                <option value="normal" selected>Normal</option>
-                <option value="high">High (export)</option>
+                <option value="draft">Draft (180)</option>
+                <option value="normal" selected>Normal (360)</option>
+                <option value="high">High (640)</option>
+                <option value="extra">Extra (960)</option>
               </select>
             </div>
             <div class="field">
@@ -262,7 +277,7 @@
           <button type="button" class="btn btn-primary" id="btn-rebuild">Update ring</button>
           <button type="button" class="btn btn-ghost" id="btn-export-footer">Download STL</button>
           <p class="hint">
-            STL: binary · mm · High quality ≈ 0.05&nbsp;mm edges · depth ≥ 0.3&nbsp;mm for casting
+            STL: binary · mm · Extra quality ≈ 0.06&nbsp;mm inner edges · depth ≥ 0.3&nbsp;mm for casting
           </p>
         </div>
       </aside>

@@ -1,16 +1,14 @@
 import './style.css'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import {
   applyCutawayToGroup,
   applyMetalToGroup,
+  buildBlankRing,
   buildRing,
   disposeBuiltRing,
 } from './buildRing'
-import type { BuiltRing } from './buildRing'
-import { exportMeshToStl } from './exportStl'
-import { renderInscriptionPreview } from './annatarPreview'
+import type { BuiltRing, BuildMode } from './buildRing'
 import {
   DEFAULT_GOLD_SPOT_USD_PER_TROY_OZ,
   estimate18kGold,
@@ -38,19 +36,23 @@ let buildGeneration = 0
 let building = false
 /** Latest params requested while a build was in flight. */
 let pendingParams: RingParams | null = null
-let pendingMode: 'preview' | 'final' | null = null
+type ViewBuildMode = Exclude<BuildMode, 'final'>
+let pendingMode: ViewBuildMode | null = null
 
 let previewTimer: ReturnType<typeof setTimeout> | null = null
-let finalTimer: ReturnType<typeof setTimeout> | null = null
+let settledTimer: ReturnType<typeof setTimeout> | null = null
 let annatarTimer: ReturnType<typeof setTimeout> | null = null
 let loadingDelayTimer: ReturnType<typeof setTimeout> | null = null
+let basePreviewFrame: number | null = null
+let basePreviewParams: RingParams | null = null
+let environmentPromise: Promise<void> | null = null
 /** True until the first ring mesh is shown after boot / hard refresh. */
 let isInitialLoad = true
 
-// Live preview is cheap (draft + no CSG); final settles to user quality + CSG.
-// Final is deliberately slow so editing two fields in a row never runs CSG mid-way.
+// Live preview is draft quality. The viewport settles to the selected quality
+// without CSG; solid boolean carving is reserved for explicit STL export.
 const PREVIEW_DEBOUNCE_MS = 80
-const FINAL_IDLE_MS = 900
+const SETTLED_IDLE_MS = 650
 const LOADING_SHOW_AFTER_MS = 90
 
 // ─── Three.js scene ──────────────────────────────────────────────────────────
@@ -80,9 +82,6 @@ controls.dampingFactor = 0.06
 controls.minDistance = 8
 controls.maxDistance = 120
 controls.target.set(0, 0, 0)
-
-const pmrem = new THREE.PMREMGenerator(renderer)
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
 
 const lights = createSceneLights(scene)
 applyLightPreset(lightPreset, lights, scene, renderer)
@@ -179,10 +178,12 @@ function updateAnnatarPreview() {
   annatarTimer = setTimeout(() => {
     const hostEl = document.getElementById('annatar-preview-host')
     if (!hostEl) return
-    void renderInscriptionPreview(hostEl, params).catch((err) => {
-      console.warn(err)
-      hostEl.innerHTML = '<p class="hint">Preview unavailable</p>'
-    })
+    void import('./annatarPreview')
+      .then(({ renderInscriptionPreview }) => renderInscriptionPreview(hostEl, params))
+      .catch((err) => {
+        console.warn(err)
+        hostEl.innerHTML = '<p class="hint">Preview unavailable</p>'
+      })
   }, 150)
 }
 
@@ -290,7 +291,7 @@ for (const preset of RING_SIZE_PRESETS) {
   btn.dataset.diameter = String(preset.diameterMm)
   btn.addEventListener('click', () => {
     ;($('innerDiameterMm') as HTMLInputElement).value = String(preset.diameterMm)
-    scheduleGeometryRebuild('both')
+    scheduleGeometryRebuild('both', true)
   })
   presetsHost.appendChild(btn)
 }
@@ -300,6 +301,7 @@ for (const preset of RING_SIZE_PRESETS) {
 function applyCosmeticMetal(metal: MetalFinish) {
   params = { ...params, metal }
   if (built) applyMetalToGroup(built.group, metal)
+  requestRender()
 }
 
 function applyCosmeticCutaway(cutaway: boolean) {
@@ -307,6 +309,7 @@ function applyCosmeticCutaway(cutaway: boolean) {
   if (built) {
     built.cutawayPlane = applyCutawayToGroup(built.group, cutaway, params.textAngleDeg)
   }
+  requestRender()
 }
 
 function clearRingGroup() {
@@ -345,11 +348,8 @@ function paramsEqualGeom(a: RingParams, b: RingParams): boolean {
   )
 }
 
-function mergeBuildMode(
-  a: 'preview' | 'final' | null,
-  b: 'preview' | 'final',
-): 'preview' | 'final' {
-  return a === 'final' || b === 'final' ? 'final' : 'preview'
+function mergeBuildMode(a: ViewBuildMode | null, b: ViewBuildMode): ViewBuildMode {
+  return a === 'settled' || b === 'settled' ? 'settled' : 'preview'
 }
 
 /** Abort in-flight work at the next yield checkpoint. */
@@ -357,7 +357,29 @@ function invalidateInFlightBuild() {
   buildGeneration++
 }
 
-async function runBuild(nextParams: RingParams, mode: 'preview' | 'final') {
+/**
+ * Keep band dimensions visually attached to sliders. Engraving is restored by
+ * the debounced preview build, while this cheap draft shell is capped at 1/frame.
+ */
+function scheduleBaseBandPreview(nextParams: RingParams) {
+  basePreviewParams = nextParams
+  if (basePreviewFrame !== null) return
+  basePreviewFrame = requestAnimationFrame(() => {
+    basePreviewFrame = null
+    const latest = basePreviewParams
+    basePreviewParams = null
+    if (!latest) return
+
+    const blank = buildBlankRing(latest)
+    clearRingGroup()
+    ringGroup.add(blank.group)
+    built = blank
+    statsEl.innerHTML = `Triangles: <strong>${blank.triangleCount.toLocaleString()}</strong> · shaping`
+    requestRender()
+  })
+}
+
+async function runBuild(nextParams: RingParams, mode: ViewBuildMode) {
   // Coalesce: remember latest request and cancel the running job
   if (building) {
     pendingParams = nextParams
@@ -381,21 +403,15 @@ async function runBuild(nextParams: RingParams, mode: 'preview' | 'final') {
   updateGoldEstimate()
   updateDimLabels()
 
-  // Preview must stay snappy; final may include date CSG (a few seconds on High).
-  // Only toast — do not flip `building` while work may still finish (avoids stuck state).
-  const safetyMs = mode === 'preview' ? 20000 : 90000
+  // Only toast; do not flip `building` while work may still finish.
+  const safetyMs = mode === 'preview' ? 3000 : 10000
   const safety = window.setTimeout(() => {
     if (building && buildGeneration === gen) {
       if (isInitialLoad) {
-        setLoadingCopy('Still working…', 'High quality + date carve can take a moment')
+        setLoadingCopy('Still working…', 'Preparing the engraved preview')
       }
-      setBuildBusy(true, mode === 'final' ? 'Carving date (CSG)…' : 'Still building…')
-      toast(
-        mode === 'final'
-          ? 'Still refining — High + date CSG can take a few seconds'
-          : 'Preview is slow — try Draft quality',
-        false,
-      )
+      setBuildBusy(true, 'Still building…')
+      toast('Preview is slow — try Draft quality', false)
     }
   }, safetyMs)
 
@@ -415,10 +431,16 @@ async function runBuild(nextParams: RingParams, mode: 'preview' | 'final') {
       return
     }
 
+    if (basePreviewFrame !== null) {
+      cancelAnimationFrame(basePreviewFrame)
+      basePreviewFrame = null
+      basePreviewParams = null
+    }
     clearRingGroup()
     ringGroup.add(next.group)
     built = next
     setInkVisible(next.group, showInk)
+    requestRender()
     // Don't re-run applyLightPreset (full scene traverse) on every rebuild
     const tag = mode === 'preview' ? ' · live' : ''
     statsEl.innerHTML = `Triangles: <strong>${next.triangleCount.toLocaleString()}</strong>${tag}`
@@ -440,7 +462,7 @@ async function runBuild(nextParams: RingParams, mode: 'preview' | 'final') {
 
     if (pendingParams) {
       const p = pendingParams
-      const m = pendingMode ?? 'final'
+      const m = pendingMode ?? 'settled'
       pendingParams = null
       pendingMode = null
       // Keep busy chip on; next runBuild will refresh label
@@ -456,10 +478,13 @@ async function runBuild(nextParams: RingParams, mode: 'preview' | 'final') {
 /**
  * Schedule geometry rebuild.
  * - `preview`: fast draft mesh while dragging (no CSG)
- * - `final`: full quality + CSG after a long idle pause
- * - `both`: preview soon + final after idle (slider input)
+ * - `settled`: selected viewport quality, still without CSG
+ * - `both`: preview soon + selected quality after idle
  */
-function scheduleGeometryRebuild(kind: 'preview' | 'final' | 'both' = 'both') {
+function scheduleGeometryRebuild(
+  kind: ViewBuildMode | 'both' = 'both',
+  showBaseBand = false,
+) {
   let next: RingParams
   try {
     next = readParamsFromUi()
@@ -483,6 +508,7 @@ function scheduleGeometryRebuild(kind: 'preview' | 'final' | 'both' = 'both') {
   params = next
   updateGoldEstimate()
   updateDimLabels()
+  if (showBaseBand) scheduleBaseBandPreview(next)
 
   // New input always cancels the current heavy job so the UI never waits on it
   if (building) invalidateInFlightBuild()
@@ -495,30 +521,30 @@ function scheduleGeometryRebuild(kind: 'preview' | 'final' | 'both' = 'both') {
     }, PREVIEW_DEBOUNCE_MS)
   }
 
-  if (kind === 'final' || kind === 'both') {
-    if (finalTimer) clearTimeout(finalTimer)
-    finalTimer = setTimeout(() => {
-      finalTimer = null
+  if (kind === 'settled' || kind === 'both') {
+    if (settledTimer) clearTimeout(settledTimer)
+    settledTimer = setTimeout(() => {
+      settledTimer = null
       if (previewTimer) {
         clearTimeout(previewTimer)
         previewTimer = null
       }
-      void runBuild(readParamsFromUi(), 'final')
-    }, kind === 'final' ? 50 : FINAL_IDLE_MS)
+      void runBuild(readParamsFromUi(), 'settled')
+    }, kind === 'settled' ? 50 : SETTLED_IDLE_MS)
   }
 }
 
-function scheduleFinalNow() {
+function scheduleSettledNow() {
   if (previewTimer) {
     clearTimeout(previewTimer)
     previewTimer = null
   }
-  if (finalTimer) {
-    clearTimeout(finalTimer)
-    finalTimer = null
+  if (settledTimer) {
+    clearTimeout(settledTimer)
+    settledTimer = null
   }
   if (building) invalidateInFlightBuild()
-  void runBuild(readParamsFromUi(), 'final')
+  void runBuild(readParamsFromUi(), 'settled')
 }
 
 // ─── Control wiring ──────────────────────────────────────────────────────────
@@ -538,18 +564,11 @@ const geomLiveIds = [
 for (const id of geomLiveIds) {
   const el = $(id)
   el.addEventListener('input', () => {
-    if (id === 'innerDiameterMm' || id === 'bandWidthMm' || id === 'bandThicknessMm') {
-      try {
-        params = readParamsFromUi()
-        updateGoldEstimate()
-        updateDimLabels()
-      } catch {
-        /* partial */
-      }
-    }
-    scheduleGeometryRebuild('both')
+    const changesBandShape =
+      id === 'innerDiameterMm' || id === 'bandWidthMm' || id === 'bandThicknessMm'
+    scheduleGeometryRebuild('both', changesBandShape)
   })
-  el.addEventListener('change', () => scheduleFinalNow())
+  el.addEventListener('change', () => scheduleSettledNow())
 }
 
 // Metal — color only, no rebuild
@@ -571,6 +590,7 @@ $('goldSpotUsd').addEventListener('change', () => updateGoldEstimate())
 $('showInk').addEventListener('change', () => {
   showInk = ($('showInk') as HTMLInputElement).checked
   if (built) setInkVisible(built.group, showInk)
+  requestRender()
 })
 
 document.querySelectorAll<HTMLButtonElement>('.light-chip').forEach((btn) => {
@@ -582,6 +602,7 @@ document.querySelectorAll<HTMLButtonElement>('.light-chip').forEach((btn) => {
       el.classList.toggle('active', (el as HTMLElement).dataset.light === id)
     })
     applyLightPreset(lightPreset, lights, scene, renderer)
+    requestRender()
   })
 })
 
@@ -590,33 +611,33 @@ $('innerText').addEventListener('input', () => {
   params = readParamsFromUi()
   void updateAnnatarPreview()
 })
-$('innerText').addEventListener('change', () => scheduleFinalNow())
+$('innerText').addEventListener('change', () => scheduleSettledNow())
 
 $('innerTengwarKeys').addEventListener('input', () => {
   params = readParamsFromUi()
   void updateAnnatarPreview()
 })
-$('innerTengwarKeys').addEventListener('change', () => scheduleFinalNow())
+$('innerTengwarKeys').addEventListener('change', () => scheduleSettledNow())
 
 $('innerDateText').addEventListener('input', () => {
-  // Live date typing — draft preview; CSG final after idle
+  // Live date typing uses draft displacement, then selected viewport quality.
   scheduleGeometryRebuild('both')
 })
-$('innerDateText').addEventListener('change', () => scheduleFinalNow())
+$('innerDateText').addEventListener('change', () => scheduleSettledNow())
 $('innerDateText').addEventListener('keydown', (e) => {
-  if ((e as KeyboardEvent).key === 'Enter') scheduleFinalNow()
+  if ((e as KeyboardEvent).key === 'Enter') scheduleSettledNow()
 })
 
-$('outerText').addEventListener('change', () => scheduleFinalNow())
-$('outerTengwarKeys').addEventListener('change', () => scheduleFinalNow())
+$('outerText').addEventListener('change', () => scheduleSettledNow())
+$('outerTengwarKeys').addEventListener('change', () => scheduleSettledNow())
 
 $('font').addEventListener('change', () => {
   params = readParamsFromUi()
   void updateAnnatarPreview()
-  scheduleFinalNow()
+  scheduleSettledNow()
 })
 
-$('btn-rebuild').addEventListener('click', () => scheduleFinalNow())
+$('btn-rebuild').addEventListener('click', () => scheduleSettledNow())
 
 async function doExport() {
   if (params.cutaway) {
@@ -625,9 +646,12 @@ async function doExport() {
 
   // Always export a final-quality mesh (not a draft live preview)
   setLoading(true)
+  setBuildBusy(true, 'Preparing STL…')
   try {
     const p = readParamsFromUi()
+    const exporterModule = import('./exportStl')
     const final = await buildRing(p, { mode: 'final' })
+    const { exportMeshToStl } = await exporterModule
     const label = p.innerText || p.outerText || 'wedding-ring'
     const safeName = label
       .slice(0, 40)
@@ -642,6 +666,7 @@ async function doExport() {
     built = final
     setInkVisible(final.group, showInk)
     applyLightPreset(lightPreset, lights, scene, renderer)
+    requestRender()
     statsEl.innerHTML = `Triangles: <strong>${final.triangleCount.toLocaleString()}</strong>`
     toast(`Exported ${filename}`)
   } catch (err) {
@@ -649,6 +674,7 @@ async function doExport() {
     toast(err instanceof Error ? err.message : 'Export failed', true)
   } finally {
     setLoading(false)
+    setBuildBusy(false)
   }
 }
 
@@ -659,9 +685,10 @@ $('btn-reset-camera').addEventListener('click', () => {
   camera.position.set(22, 14, 20)
   controls.target.set(0, 0, 0)
   controls.update()
+  requestRender()
 })
 
-// ─── Resize / animate ────────────────────────────────────────────────────────
+// ─── Resize / render invalidation ───────────────────────────────────────────
 
 function onResize() {
   const w = window.innerWidth
@@ -669,14 +696,44 @@ function onResize() {
   camera.aspect = w / h
   camera.updateProjectionMatrix()
   renderer.setSize(w, h)
+  requestRender()
 }
 window.addEventListener('resize', onResize)
 
-function animate() {
-  requestAnimationFrame(animate)
-  controls.update()
-  renderer.render(scene, camera)
+let renderRequested = false
+
+/** Render only when scene/camera state changes; damping queues its own tail frames. */
+function requestRender() {
+  if (renderRequested) return
+  renderRequested = true
+  requestAnimationFrame(renderFrame)
 }
+
+function prepareEnvironment(): Promise<void> {
+  if (environmentPromise) return environmentPromise
+  environmentPromise = import('three/examples/jsm/environments/RoomEnvironment.js')
+    .then(({ RoomEnvironment }) => {
+      const pmrem = new THREE.PMREMGenerator(renderer)
+      const room = new RoomEnvironment()
+      scene.environment = pmrem.fromScene(room, 0.04).texture
+      room.dispose()
+      pmrem.dispose()
+      requestRender()
+    })
+    .catch((err) => {
+      console.warn('Studio reflections unavailable', err)
+    })
+  return environmentPromise
+}
+
+function renderFrame() {
+  renderRequested = false
+  const controlsChanged = controls.update()
+  renderer.render(scene, camera)
+  if (controlsChanged) requestRender()
+}
+
+controls.addEventListener('change', requestRender)
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 
@@ -685,5 +742,23 @@ function animate() {
 writeParamsToUi(params)
 setLoading(true, true)
 setLoadingCopy('Forging your ring', 'Building geometry & inscriptions…')
-void runBuild(params, 'final')
-animate()
+
+// Put a real, orbitable band on screen before font parsing or inscription work.
+const initialBand = buildBlankRing(params)
+ringGroup.add(initialBand.group)
+built = initialBand
+statsEl.innerHTML = `Triangles: <strong>${initialBand.triangleCount.toLocaleString()}</strong> · base`
+finishInitialLoad()
+requestRender()
+
+void runBuild(params, 'preview').then(() => {
+  // Reflection-map generation is GPU-heavy and not needed for first paint.
+  void prepareEnvironment()
+  // Upgrade the visible draft after the first ring is already interactive.
+  if (!settledTimer && built) {
+    settledTimer = setTimeout(() => {
+      settledTimer = null
+      void runBuild(readParamsFromUi(), 'settled')
+    }, SETTLED_IDLE_MS)
+  }
+})

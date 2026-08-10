@@ -1,9 +1,9 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { parse, type Font, type Path } from 'opentype.js'
+import type { Font, Path } from 'opentype.js'
+import { loadDateFont, loadRingFont } from './fontLoader'
 import { outerDomeFrame } from './ringGeometry'
 import type { RingParams, TextSurface } from './types'
-import { DATE_FONT_PATH, FONT_PATHS } from './types'
 import { resolveInscriptionText } from './tengwarTranscribe'
 
 /** Band cross-section params needed to map outer ink onto the D-profile dome. */
@@ -13,39 +13,13 @@ interface DomeParams {
   halfW: number
 }
 
-const fontCache = new Map<string, Font>()
-
 /** Curve tessellation for ExtrudeGeometry — smooth Annatar + Inter digits. */
 const EXTRUDE_CURVE_SEGMENTS = 16
 /** Outline sampling for displacement masks. */
 const POLY_DIVISIONS = 48
 const POLY_HOLE_DIVISIONS = 24
 
-async function loadFontFromPath(path: string): Promise<Font> {
-  const cached = fontCache.get(path)
-  if (cached) return cached
-
-  const res = await fetch(path)
-  if (!res.ok) {
-    throw new Error(`Failed to fetch font (${res.status}): ${path}`)
-  }
-  const font = parse(await res.arrayBuffer())
-  fontCache.set(path, font)
-  return font
-}
-
-export async function loadFont(key: RingParams['font']): Promise<Font> {
-  return loadFontFromPath(FONT_PATHS[key])
-}
-
-export async function loadDateFont(): Promise<Font> {
-  return loadFontFromPath(DATE_FONT_PATH)
-}
-
-/**
- * OpenType path → THREE shapes (Y flipped for upright glyphs).
- * Forces outer rings to positive area so ExtrudeGeometry fills solidly.
- */
+/** OpenType path → THREE shapes (Y flipped for upright glyphs). */
 function pathToShapes(path: Path): THREE.Shape[] {
   const shapePath = new THREE.ShapePath()
   for (const cmd of path.commands) {
@@ -69,43 +43,10 @@ function pathToShapes(path: Path): THREE.Shape[] {
         break
     }
   }
-  const shapes = shapePath.toShapes()
-  // Ensure outer contour winds for solid fill after Y-flip
-  for (const shape of shapes) {
-    ensurePositiveArea(shape)
-    for (const hole of shape.holes) ensureNegativeArea(hole)
-  }
-  return shapes
-}
-
-function signedArea(pts: THREE.Vector2[]): number {
-  let a = 0
-  for (let i = 0, n = pts.length; i < n; i++) {
-    const p = pts[i]!
-    const q = pts[(i + 1) % n]!
-    a += p.x * q.y - q.x * p.y
-  }
-  return a * 0.5
-}
-
-function rebuildFromPoints(target: THREE.Path | THREE.Shape, pts: THREE.Vector2[]): void {
-  if (pts.length < 3) return
-  target.curves.length = 0
-  target.moveTo(pts[0]!.x, pts[0]!.y)
-  for (let i = 1; i < pts.length; i++) target.lineTo(pts[i]!.x, pts[i]!.y)
-  target.closePath()
-}
-
-function ensurePositiveArea(shape: THREE.Shape): void {
-  const pts = shape.getPoints(48)
-  if (pts.length < 3) return
-  if (signedArea(pts) < 0) rebuildFromPoints(shape, pts.slice().reverse())
-}
-
-function ensureNegativeArea(path: THREE.Path): void {
-  const pts = path.getPoints(32)
-  if (pts.length < 3) return
-  if (signedArea(pts) > 0) rebuildFromPoints(path, pts.slice().reverse())
+  // ShapePath and ExtrudeGeometry both normalize contour/hole winding. Keeping
+  // the original Bézier curves avoids flattening every glyph to hundreds of
+  // line segments before the requested tessellation is applied.
+  return shapePath.toShapes()
 }
 
 export interface FlatPoly {
@@ -113,6 +54,64 @@ export interface FlatPoly {
   holes: THREE.Vector2[][]
   surface: TextSurface
   angleOffsetRad: number
+  angularDirection: AngularDirection
+  /** Flat-layout bounds used to reject almost every glyph before polygon tests. */
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+}
+
+interface FlatPolyGroup {
+  angleOffsetRad: number
+  angularDirection: AngularDirection
+  polys: FlatPoly[]
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+}
+
+function boundsForRings(outer: THREE.Vector2[], holes: THREE.Vector2[][]) {
+  let minX = Infinity
+  let maxX = -Infinity
+  let minY = Infinity
+  let maxY = -Infinity
+  for (const ring of [outer, ...holes]) {
+    for (const p of ring) {
+      minX = Math.min(minX, p.x)
+      maxX = Math.max(maxX, p.x)
+      minY = Math.min(minY, p.y)
+      maxY = Math.max(maxY, p.y)
+    }
+  }
+  return { minX, maxX, minY, maxY }
+}
+
+function groupPolysByAngle(polys: FlatPoly[]): FlatPolyGroup[] {
+  const groups = new Map<string, FlatPolyGroup>()
+  for (const poly of polys) {
+    const key = `${poly.angleOffsetRad}:${poly.angularDirection}`
+    let group = groups.get(key)
+    if (!group) {
+      group = {
+        angleOffsetRad: poly.angleOffsetRad,
+        angularDirection: poly.angularDirection,
+        polys: [],
+        minX: Infinity,
+        maxX: -Infinity,
+        minY: Infinity,
+        maxY: -Infinity,
+      }
+      groups.set(key, group)
+    }
+    group.polys.push(poly)
+    group.minX = Math.min(group.minX, poly.minX)
+    group.maxX = Math.max(group.maxX, poly.maxX)
+    group.minY = Math.min(group.minY, poly.minY)
+    group.maxY = Math.max(group.maxY, poly.maxY)
+  }
+  return [...groups.values()]
 }
 
 function pointInRing(point: THREE.Vector2, ring: THREE.Vector2[]): boolean {
@@ -146,8 +145,22 @@ function hitPolySoft(
   sample: THREE.Vector2,
   softMm: number,
 ): boolean {
-  for (let dx = -1; dx <= 1; dx++) {
-    for (let dy = -1; dy <= 1; dy++) {
+  if (
+    arc < poly.minX - softMm ||
+    arc > poly.maxX + softMm ||
+    y < poly.minY - softMm ||
+    y > poly.maxY + softMm
+  ) {
+    return false
+  }
+
+  // The center hits most interior vertices and avoids the other 8 tests.
+  sample.set(arc, y)
+  if (pointInPoly(sample, poly)) return true
+
+  for (const dx of [-1, 0, 1]) {
+    for (const dy of [-1, 0, 1]) {
+      if (dx === 0 && dy === 0) continue
       sample.set(arc + dx * softMm, y + dy * softMm)
       if (pointInPoly(sample, poly)) return true
     }
@@ -171,6 +184,67 @@ export interface TextLayout {
   transcribedPreview?: string
 }
 
+const MAX_LAYOUT_CACHE = 4
+const layoutCache = new Map<string, TextLayout>()
+
+function textLayoutKey(params: RingParams): string {
+  return JSON.stringify([
+    params.innerDiameterMm,
+    params.bandWidthMm,
+    params.bandThicknessMm,
+    params.innerText,
+    params.innerDateText,
+    params.innerTengwarKeys,
+    params.outerText,
+    params.outerTengwarKeys,
+    params.textDepthMm,
+    params.textSizeMm,
+    params.dateTextSizeMm,
+    params.textAngleDeg,
+    params.font,
+  ])
+}
+
+function cloneTextLayout(layout: TextLayout): TextLayout {
+  return {
+    // Polygon points are read-only during displacement and safe to share.
+    polys: layout.polys,
+    previewGeometries: layout.previewGeometries.map((geometry) => geometry.clone()),
+    dateCutter: layout.dateCutter?.clone() ?? null,
+    sizeMm: layout.sizeMm,
+    depthMm: layout.depthMm,
+    transcribedPreview: layout.transcribedPreview,
+  }
+}
+
+function disposeTextLayout(layout: TextLayout): void {
+  for (const geometry of layout.previewGeometries) geometry.dispose()
+  layout.dateCutter?.dispose()
+}
+
+function getCachedTextLayout(key: string): TextLayout | null {
+  const cached = layoutCache.get(key)
+  if (!cached) return null
+  // Refresh insertion order for LRU eviction.
+  layoutCache.delete(key)
+  layoutCache.set(key, cached)
+  return cloneTextLayout(cached)
+}
+
+function cacheTextLayout(key: string, layout: TextLayout): void {
+  const previous = layoutCache.get(key)
+  if (previous) disposeTextLayout(previous)
+  layoutCache.delete(key)
+  layoutCache.set(key, cloneTextLayout(layout))
+  while (layoutCache.size > MAX_LAYOUT_CACHE) {
+    const oldestKey = layoutCache.keys().next().value as string | undefined
+    if (!oldestKey) break
+    const oldest = layoutCache.get(oldestKey)
+    if (oldest) disposeTextLayout(oldest)
+    layoutCache.delete(oldestKey)
+  }
+}
+
 interface SurfaceJob {
   text: string
   surface: TextSurface
@@ -181,7 +255,10 @@ interface SurfaceJob {
   keysOverride?: string
   /** Date / Inter digits — solid CSG carve + ink */
   latinSafe?: boolean
+  angularDirection: AngularDirection
 }
+
+export type AngularDirection = 1 | -1
 
 /**
  * Build per-glyph OpenType paths with advances (never uses GSUB — safe for Inter).
@@ -214,7 +291,7 @@ function pathsForLatinRun(font: Font, text: string, sizeMm: number): Path[] {
  * Date (latinSafe): solid CSG cutter + ink only — no displacement polys.
  * Thin Inter strokes cannot be resolved by vertex displacement on a lathe mesh.
  */
-function layoutTextRun(
+async function layoutTextRun(
   font: Font,
   rawText: string,
   sizeMm: number,
@@ -223,16 +300,18 @@ function layoutTextRun(
   radius: number,
   angleRad: number,
   angleOffsetRad: number,
+  angularDirection: AngularDirection,
   keysOverride: string | undefined,
   latinSafe: boolean,
   dome: DomeParams,
-): {
+  isCancelled: () => boolean,
+): Promise<{
   polys: FlatPoly[]
   previews: THREE.BufferGeometry[]
   cutter: THREE.BufferGeometry | null
   encoded: string
   widthMm: number
-} {
+}> {
   const encoded = resolveInscriptionText(rawText, keysOverride ?? '')
   if (!encoded) return { polys: [], previews: [], cutter: null, encoded: '', widthMm: 0 }
 
@@ -277,50 +356,85 @@ function layoutTextRun(
   const polyDiv = POLY_DIVISIONS
   const holeDiv = POLY_HOLE_DIVISIONS
 
-  for (const path of paths) {
-    if (!path.commands.length) continue
-    const shapes = pathToShapes(path)
-    if (shapes.length === 0) continue
+  try {
+    for (let pathIndex = 0; pathIndex < paths.length; pathIndex++) {
+      if (pathIndex > 0 && pathIndex % 2 === 0) {
+        await yieldToMain()
+        if (isCancelled()) throw new DOMException('Build cancelled', 'AbortError')
+      }
 
-    // --- Ink solid (preview + visual fill) — entirely inside metal ---
-    const inkGeom = new THREE.ExtrudeGeometry(shapes, {
-      depth: inkDepth,
-      bevelEnabled: false,
-      curveSegments: curveSegs,
-      steps: 1,
-    })
-    inkGeom.translate(-cx, -cy, 0)
-    previews.push(bendOntoSurface(inkGeom, radius, angleRad, surface, depthMm, dome))
-    inkGeom.dispose()
+      const path = paths[pathIndex]!
+      if (!path.commands.length) continue
+      const shapes = pathToShapes(path)
+      if (shapes.length === 0) continue
 
-    // Displacement masks (used for preview; skipped when final CSG runs on date)
-    for (const shape of shapes) {
-      const outer = shape
-        .getPoints(latinSafe ? 64 : polyDiv)
-        .map((p) => new THREE.Vector2(p.x - cx, p.y - cy))
-      const holes = shape.holes.map((h) =>
-        h.getPoints(latinSafe ? 32 : holeDiv).map((p) => new THREE.Vector2(p.x - cx, p.y - cy)),
-      )
-      polys.push({
-        outer,
-        holes,
-        surface,
-        angleOffsetRad,
-      })
-    }
-
-    if (latinSafe && surface === 'inner') {
-      // CSG cutter for final builds — full solid cavities independent of mesh density
-      const cutGeom = new THREE.ExtrudeGeometry(shapes, {
-        depth: cutterDepth,
+      // --- Ink solid (preview + visual fill) — entirely inside metal ---
+      const inkGeom = new THREE.ExtrudeGeometry(shapes, {
+        depth: inkDepth,
         bevelEnabled: false,
-        curveSegments: Math.min(curveSegs, 12), // lighter cutter for faster CSG
+        curveSegments: curveSegs,
         steps: 1,
       })
-      cutGeom.translate(-cx, -cy, 0)
-      cutterParts.push(bendDateCutter(cutGeom, radius, angleRad, depthMm))
-      cutGeom.dispose()
+      inkGeom.translate(-cx, -cy, 0)
+      previews.push(
+        bendOntoSurface(
+          inkGeom,
+          radius,
+          angleRad,
+          angularDirection,
+          surface,
+          depthMm,
+          dome,
+        ),
+      )
+      inkGeom.dispose()
+
+      // Displacement masks (used for preview; skipped when final CSG runs on date)
+      for (const shape of shapes) {
+        const outer = shape
+          .getPoints(latinSafe ? 64 : polyDiv)
+          .map((p) => new THREE.Vector2(p.x - cx, p.y - cy))
+        const holes = shape.holes.map((h) =>
+          h
+            .getPoints(latinSafe ? 32 : holeDiv)
+            .map((p) => new THREE.Vector2(p.x - cx, p.y - cy)),
+        )
+        const bounds = boundsForRings(outer, holes)
+        polys.push({
+          outer,
+          holes,
+          surface,
+          angleOffsetRad,
+          angularDirection,
+          ...bounds,
+        })
+      }
+
+      if (latinSafe && surface === 'inner') {
+        // CSG cutter for final builds — full solid cavities independent of mesh density
+        const cutGeom = new THREE.ExtrudeGeometry(shapes, {
+          depth: cutterDepth,
+          bevelEnabled: false,
+          curveSegments: Math.min(curveSegs, 12), // lighter cutter for faster CSG
+          steps: 1,
+        })
+        cutGeom.translate(-cx, -cy, 0)
+        cutterParts.push(
+          bendDateCutter(cutGeom, radius, angleRad, angularDirection, depthMm),
+        )
+        cutGeom.dispose()
+      }
     }
+  } catch (err) {
+    for (const geometry of previews) geometry.dispose()
+    for (const geometry of cutterParts) geometry.dispose()
+    throw err
+  }
+
+  if (isCancelled()) {
+    for (const geometry of previews) geometry.dispose()
+    for (const geometry of cutterParts) geometry.dispose()
+    throw new DOMException('Build cancelled', 'AbortError')
   }
 
   let cutter: THREE.BufferGeometry | null = null
@@ -344,7 +458,14 @@ function layoutTextRun(
  * - Date is centered opposite the primary run’s midpoint (not the start),
  *   so long Tengwar does not collide with the date.
  */
-export async function buildTextLayout(params: RingParams): Promise<TextLayout | null> {
+export async function buildTextLayout(
+  params: RingParams,
+  isCancelled: () => boolean = () => false,
+): Promise<TextLayout | null> {
+  const cacheKey = textLayoutKey(params)
+  const cached = getCachedTextLayout(cacheKey)
+  if (cached) return cached
+
   const sizeMm = Math.min(params.textSizeMm, params.bandWidthMm * 0.55)
   const dateSizeMm = Math.min(
     params.dateTextSizeMm > 0 ? params.dateTextSizeMm : sizeMm * 0.9,
@@ -355,7 +476,8 @@ export async function buildTextLayout(params: RingParams): Promise<TextLayout | 
   const innerR = params.innerDiameterMm / 2
   const outerR = innerR + params.bandThicknessMm
 
-  const primaryFont = await loadFont(params.font)
+  const primaryFont = await loadRingFont(params.font)
+  if (isCancelled()) throw new DOMException('Build cancelled', 'AbortError')
   const dome: DomeParams = {
     innerR,
     thickness: params.bandThicknessMm,
@@ -376,6 +498,7 @@ export async function buildTextLayout(params: RingParams): Promise<TextLayout | 
       sizeMm,
       font: primaryFont,
       keysOverride: params.innerTengwarKeys.trim() || undefined,
+      angularDirection: 1,
     })
   }
   if (params.innerDateText.trim()) {
@@ -388,6 +511,7 @@ export async function buildTextLayout(params: RingParams): Promise<TextLayout | 
       sizeMm: Math.max(dateSizeMm, 1.25),
       font: loadDateFont(),
       latinSafe: true,
+      angularDirection: -1,
     })
   }
   if (params.outerText.trim() || params.outerTengwarKeys.trim()) {
@@ -400,6 +524,7 @@ export async function buildTextLayout(params: RingParams): Promise<TextLayout | 
       radius: outerR,
       font: primaryFont,
       keysOverride: params.outerTengwarKeys.trim() || undefined,
+      angularDirection: 1,
     })
   }
   if (jobs.length === 0) return null
@@ -409,60 +534,82 @@ export async function buildTextLayout(params: RingParams): Promise<TextLayout | 
   let dateCutter: THREE.BufferGeometry | null = null
   let transcribedPreview: string | undefined
 
-  for (const job of jobs) {
-    const font = await job.font
-    const isDate = !!job.latinSafe
-    const result = layoutTextRun(
-      font,
-      job.text,
-      job.sizeMm,
-      depthMm,
-      job.surface,
-      job.radius,
-      job.angleRad,
-      job.angleRad - startAngle,
-      job.keysOverride,
-      !!job.latinSafe,
-      dome,
-    )
-    polys.push(...result.polys)
-    previewGeometries.push(...result.previews)
-    if (result.cutter) {
-      if (dateCutter) dateCutter.dispose()
-      dateCutter = result.cutter
+  try {
+    for (const job of jobs) {
+      const font = await job.font
+      if (isCancelled()) throw new DOMException('Build cancelled', 'AbortError')
+      const isDate = !!job.latinSafe
+      const result = await layoutTextRun(
+        font,
+        job.text,
+        job.sizeMm,
+        depthMm,
+        job.surface,
+        job.radius,
+        job.angleRad,
+        job.angleRad - startAngle,
+        job.angularDirection,
+        job.keysOverride,
+        !!job.latinSafe,
+        dome,
+        isCancelled,
+      )
+      polys.push(...result.polys)
+      previewGeometries.push(...result.previews)
+      if (result.cutter) {
+        if (dateCutter) dateCutter.dispose()
+        dateCutter = result.cutter
+      }
+      if (job.surface === 'inner' && !isDate && result.encoded) {
+        transcribedPreview = result.encoded
+      }
     }
-    if (job.surface === 'inner' && !isDate && result.encoded) {
-      transcribedPreview = result.encoded
-    }
+  } catch (err) {
+    for (const geometry of previewGeometries) geometry.dispose()
+    dateCutter?.dispose()
+    throw err
   }
 
   if (polys.length === 0 && previewGeometries.length === 0 && !dateCutter) return null
-  return { polys, previewGeometries, dateCutter, sizeMm, depthMm, transcribedPreview }
+  const layout = { polys, previewGeometries, dateCutter, sizeMm, depthMm, transcribedPreview }
+  cacheTextLayout(cacheKey, layout)
+  return layout
 }
 
 /**
  * Map layout-x onto cylinder angle.
- * Restored working convention:
- *   inner: θ = start − x/r
- *   outer: θ = start + x/r  (via signedArc flip)
- * so ink + displacement stay aligned and date at ±π samples correctly with wrap.
+ * Primary inner and outer inscriptions share the same angular direction. A
+ * glyph projected radially through the band therefore reaches the inner wall
+ * without being mirrored. The date explicitly passes its legacy -1 direction.
  */
-function layoutXToWorldAngle(
+export function layoutXToWorldAngle(
   layoutX: number,
   radius: number,
   startAngleRad: number,
-  surface: TextSurface,
+  angularDirection: AngularDirection = 1,
 ): number {
-  const signedArc = surface === 'inner' ? layoutX : -layoutX
-  return startAngleRad - signedArc / radius
+  return startAngleRad + (angularDirection * layoutX) / radius
 }
 
 /** Shortest-path arc length from refAngle to theta (handles atan2 wrap at ±π). */
-function wrappedArcMm(theta: number, refAngle: number, radius: number, invert: boolean): number {
-  // invert=true → (ref − theta) as used by the original inner sampler
-  let d = invert ? refAngle - theta : theta - refAngle
-  d = Math.atan2(Math.sin(d), Math.cos(d))
-  return d * radius
+function wrappedArcMm(
+  theta: number,
+  refAngle: number,
+  radius: number,
+  angularDirection: AngularDirection,
+): number {
+  // Both angles are normalized, so one correction puts their delta in [-π, π].
+  let d = theta - refAngle
+  if (d > Math.PI) d -= Math.PI * 2
+  else if (d < -Math.PI) d += Math.PI * 2
+  return angularDirection * d * radius
+}
+
+function normalizeAngle(angle: number): number {
+  let normalized = angle % (Math.PI * 2)
+  if (normalized > Math.PI) normalized -= Math.PI * 2
+  else if (normalized < -Math.PI) normalized += Math.PI * 2
+  return normalized
 }
 
 /**
@@ -473,6 +620,7 @@ function bendOntoSurface(
   geometry: THREE.BufferGeometry,
   radius: number,
   startAngleRad: number,
+  angularDirection: AngularDirection,
   surface: TextSurface,
   pocketDepth: number,
   dome: DomeParams,
@@ -490,7 +638,7 @@ function bendOntoSurface(
 
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i)
-    const angle = layoutXToWorldAngle(v.x, radius, startAngleRad, surface)
+    const angle = layoutXToWorldAngle(v.x, radius, startAngleRad, angularDirection)
     // ExtrudeGeometry: glyph face at zMin → near free surface; back at zMax → pocket floor
     const t = (v.z - zMin) / extrude
     const along = insetFront + t * (floor - insetFront)
@@ -524,6 +672,7 @@ function bendDateCutter(
   geometry: THREE.BufferGeometry,
   radius: number,
   startAngleRad: number,
+  angularDirection: AngularDirection,
   pocketDepth: number,
 ): THREE.BufferGeometry {
   const geom = geometry.clone()
@@ -540,7 +689,7 @@ function bendDateCutter(
 
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i)
-    const angle = layoutXToWorldAngle(v.x, radius, startAngleRad, 'inner')
+    const angle = layoutXToWorldAngle(v.x, radius, startAngleRad, angularDirection)
     const t = (v.z - zMin) / extrude // 0 glyph face → 1 extruded back
     // t=0 at free side (into hole), t=1 deep in metal
     const along = -intoHole + t * (intoMetal + intoHole)
@@ -553,7 +702,7 @@ function bendDateCutter(
   return geom
 }
 
-const YIELD_EVERY_VERTS = 12_000
+const YIELD_EVERY_VERTS = 4_000
 
 function yieldToMain(): Promise<void> {
   return new Promise((r) => setTimeout(r, 0))
@@ -570,7 +719,9 @@ export async function engraveByDisplacement(
   params: RingParams,
   isCancelled?: () => boolean,
 ): Promise<THREE.BufferGeometry> {
-  const geom = ringGeometry.clone()
+  // buildRing passes an owned clone from the blank-band cache. Mutate that
+  // working geometry directly instead of cloning the entire mesh a second time.
+  const geom = ringGeometry
   const pos = geom.attributes.position as THREE.BufferAttribute
   const innerR = params.innerDiameterMm / 2
   const thickness = params.bandThicknessMm
@@ -579,8 +730,11 @@ export async function engraveByDisplacement(
   const baseAngle = (params.textAngleDeg * Math.PI) / 180
   const halfBand = params.bandWidthMm / 2
 
-  const innerPolys = polys.filter((p) => p.surface === 'inner')
-  const outerPolys = polys.filter((p) => p.surface === 'outer')
+  const innerGroups = groupPolysByAngle(polys.filter((p) => p.surface === 'inner'))
+  const outerGroups = groupPolysByAngle(polys.filter((p) => p.surface === 'outer'))
+  for (const group of [...innerGroups, ...outerGroups]) {
+    group.angleOffsetRad = normalizeAngle(baseAngle + group.angleOffsetRad)
+  }
 
   const sample = new THREE.Vector2()
   const v = new THREE.Vector3()
@@ -596,7 +750,6 @@ export async function engraveByDisplacement(
       sinceYield = 0
       await yieldToMain()
       if (isCancelled?.()) {
-        geom.dispose()
         throw new DOMException('Build cancelled', 'AbortError')
       }
     }
@@ -607,17 +760,34 @@ export async function engraveByDisplacement(
 
     const theta = Math.atan2(v.y, v.x)
 
-    // Match working bend: inner uses (ref − θ)·r, outer (θ − ref)·r, with wrap.
+    // Invert each run's bend direction. Primary inner and outer use +1; the
+    // date keeps its established -1 orientation.
     // Soft multi-sample catches thin Inter date strokes between mesh vertices.
-    if (innerPolys.length && r >= innerRMin && r <= innerRMax) {
+    if (innerGroups.length && r >= innerRMin && r <= innerRMax) {
       let hit = false
-      for (const poly of innerPolys) {
-        const angle = baseAngle + poly.angleOffsetRad
-        const a0 = wrappedArcMm(theta, angle, innerR, true)
-        if (hitPolySoft(a0, v.z, poly, sample, 0.06)) {
-          hit = true
-          break
+      for (const group of innerGroups) {
+        const a0 = wrappedArcMm(
+          theta,
+          group.angleOffsetRad,
+          innerR,
+          group.angularDirection,
+        )
+        const softMm = 0.06
+        if (
+          a0 < group.minX - softMm ||
+          a0 > group.maxX + softMm ||
+          v.z < group.minY - softMm ||
+          v.z > group.maxY + softMm
+        ) {
+          continue
         }
+        for (const poly of group.polys) {
+          if (hitPolySoft(a0, v.z, poly, sample, softMm)) {
+            hit = true
+            break
+          }
+        }
+        if (hit) break
       }
       if (hit) {
         // Recess into metal: move free-surface verts deeper (larger r)
@@ -631,18 +801,34 @@ export async function engraveByDisplacement(
       }
     }
 
-    if (outerPolys.length) {
+    if (outerGroups.length) {
       const { r: rSurf, ur, uz } = outerDomeFrame(v.z, innerR, thickness, halfBand)
       if (Math.abs(r - rSurf) > depth + 0.25) continue
 
       let hit = false
-      for (const poly of outerPolys) {
-        const angle = baseAngle + poly.angleOffsetRad
-        const a0 = wrappedArcMm(theta, angle, outerR, false)
-        if (hitPolySoft(a0, v.z, poly, sample, 0.05)) {
-          hit = true
-          break
+      for (const group of outerGroups) {
+        const a0 = wrappedArcMm(
+          theta,
+          group.angleOffsetRad,
+          outerR,
+          group.angularDirection,
+        )
+        const softMm = 0.05
+        if (
+          a0 < group.minX - softMm ||
+          a0 > group.maxX + softMm ||
+          v.z < group.minY - softMm ||
+          v.z > group.maxY + softMm
+        ) {
+          continue
         }
+        for (const poly of group.polys) {
+          if (hitPolySoft(a0, v.z, poly, sample, softMm)) {
+            hit = true
+            break
+          }
+        }
+        if (hit) break
       }
       if (hit) {
         const cosT = Math.cos(theta)

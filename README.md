@@ -39,13 +39,14 @@ Open **http://127.0.0.1:5173** (see the terminal if the port differs).
 1. Pick **ring size** (or type diameter / width / thickness).
 2. Enter **inner / outer Latin text** for reference or Latin faces.
 3. For Tengwar Annatar: paste **Tecendil → Font: Annatar** key strings under **Advanced · Tecendil Annatar encoding**.
-4. Set **date**, depth, sizes, metal, and **mesh quality** (use **High** before final export).
+4. Set **date**, depth, sizes, metal, and **mesh quality** (use **High** or **Extra** before final export).
 5. Turn **cutaway off** for manufacturing STLs.
 6. **Export STL** and send to your printer / casting service.
 
 ### Print tips
 
-- **Quality → High** (~0.08 mm circumferential edges on a US-7) is the practical sweet spot for jewelry resin masters.
+- **Quality → High** (~0.08 mm inner-wall edges on a US-7) is the practical sweet spot for jewelry resin masters.
+- **Quality → Extra** uses 960 circumferential segments (~0.06 mm inner-wall edges) for the finest inscription contours.
 - Engraving depth **0.25–0.4 mm**; text size **~1.0–1.6 mm** on typical 4–5 mm bands.
 - Prefer **SLA/DLP resin** for masters; metal FDM is a poor fit for fine tengwar.
 - Units are **millimeters**. Leave cutaway **off** for the exported solid.

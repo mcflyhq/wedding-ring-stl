@@ -1,18 +1,6 @@
-import { parse, type Font } from 'opentype.js'
+import { loadFontFromPath } from './fontLoader'
 import { DATE_FONT_PATH, FONT_PATHS, type RingParams } from './types'
 import { resolveInscriptionText } from './tengwarTranscribe'
-
-const fontCache = new Map<string, Font>()
-
-async function loadFont(path: string): Promise<Font> {
-  const hit = fontCache.get(path)
-  if (hit) return hit
-  const res = await fetch(path)
-  if (!res.ok) throw new Error(`Font fetch failed: ${path}`)
-  const font = parse(await res.arrayBuffer())
-  fontCache.set(path, font)
-  return font
-}
 
 /**
  * Render a crisp 2D SVG of the primary inscription so the user can verify
@@ -29,7 +17,7 @@ export async function renderInscriptionPreview(
   }
 
   const fontPath = FONT_PATHS[params.font] ?? DATE_FONT_PATH
-  const font = await loadFont(fontPath)
+  const font = await loadFontFromPath(fontPath)
   const usingKeys = !!params.innerTengwarKeys.trim()
 
   const fontSize = 42

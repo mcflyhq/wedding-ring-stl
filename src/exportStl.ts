@@ -13,7 +13,7 @@ import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js'
  * Recommended for casting / resin:
  * - Engraving depth ≥ 0.25–0.35 mm
  * - Feature width ≥ 0.3 mm
- * - Mesh quality **High** (≈0.05 mm circumferential edge length)
+ * - Mesh quality **High** (≈0.08 mm) or **Extra** (≈0.06 mm inner-wall edges)
  * - Watertight solid (we export the displaced band only)
  */
 export function exportMeshToStl(

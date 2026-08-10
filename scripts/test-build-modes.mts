@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as THREE from 'three'
-import { buildRing, disposeBuiltRing } from '../src/buildRing.ts'
+import { buildBlankRing, buildRing, disposeBuiltRing } from '../src/buildRing.ts'
 import type { RingParams } from '../src/types.ts'
 import { DEFAULT_PARAMS } from '../src/types.ts'
 
@@ -77,8 +77,65 @@ function countRecessedDateVerts(geom: THREE.BufferGeometry, params: RingParams):
   return n
 }
 
+function countRecessedPrimaryVerts(geom: THREE.BufferGeometry, params: RingParams): number {
+  const innerR = params.innerDiameterMm / 2
+  const depth = Math.min(params.textDepthMm, params.bandThicknessMm * 0.75)
+  const primaryAngle = (params.textAngleDeg * Math.PI) / 180
+  const pos = geom.getAttribute('position') as THREE.BufferAttribute
+  let n = 0
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    const z = pos.getZ(i)
+    if (Math.abs(z) > params.bandWidthMm * 0.45) continue
+    const r = Math.hypot(x, y)
+    if (r < innerR + 0.04 || r > innerR + depth + 0.35) continue
+    let d = Math.atan2(y, x) - primaryAngle
+    d = Math.atan2(Math.sin(d), Math.cos(d))
+    if (Math.abs(d) > 1.2) continue
+    n++
+  }
+  return n
+}
+
+function assertFiniteGeometry(geometry: THREE.BufferGeometry, label: string): void {
+  const position = geometry.getAttribute('position') as THREE.BufferAttribute | undefined
+  assert(position && position.count > 0, `${label} has positions`)
+  for (let i = 0; i < position.count; i++) {
+    assert(
+      Number.isFinite(position.getX(i)) &&
+        Number.isFinite(position.getY(i)) &&
+        Number.isFinite(position.getZ(i)),
+      `${label} position ${i} is finite`,
+    )
+  }
+}
+
+function countInkMeshes(ring: ReturnType<typeof buildBlankRing>): number {
+  let count = 0
+  ring.group.traverse((child) => {
+    if (child instanceof THREE.Mesh && child.name === 'inscription-glyph') count++
+  })
+  return count
+}
+
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(`ASSERT: ${msg}`)
+}
+
+function beginMainThreadGapProbe(): () => Promise<number> {
+  let last = performance.now()
+  let maxGapMs = 0
+  const timer = setInterval(() => {
+    const now = performance.now()
+    maxGapMs = Math.max(maxGapMs, now - last)
+    last = now
+  }, 1)
+  return async () => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    clearInterval(timer)
+    return Math.round(maxGapMs)
+  }
 }
 
 async function main(): Promise<void> {
@@ -91,12 +148,23 @@ async function main(): Promise<void> {
   const params = fixedParams()
   log(`params date="${params.innerDateText}" quality=${params.quality}`)
 
+  // --- First paint: base band needs neither fonts nor engraving ---
+  const blank = buildBlankRing(params)
+  log(
+    `blank: durationMs=${blank.stages.durationMs} ` +
+      `ranDisplacement=${blank.stages.ranDisplacement} tris=${blank.triangleCount}`,
+  )
+  assert(blank.stages.ranDisplacement === false, 'blank band skips displacement')
+  assert(blank.stages.ranDateCsg === false, 'blank band skips date CSG')
+  assert(blank.triangleCount > 0, 'blank band geometry is visible')
+
   // --- Preview: must NOT run date CSG ---
   const tPrev0 = performance.now()
   const preview = await buildRing(params, { mode: 'preview' })
   const tPrev1 = performance.now()
   log(
     `preview: durationMs=${preview.stages.durationMs} wallMs=${Math.round(tPrev1 - tPrev0)} ` +
+      `layoutMs=${preview.stages.layoutMs} displacementMs=${preview.stages.displacementMs} ` +
       `ranDisplacement=${preview.stages.ranDisplacement} ranDateCsg=${preview.stages.ranDateCsg} ` +
       `tris=${preview.triangleCount}`,
   )
@@ -107,8 +175,114 @@ async function main(): Promise<void> {
   const prevPos = preview.exportMesh.geometry.getAttribute('position')
   assert(prevPos && prevPos.count > 0, 'preview export geometry non-empty')
   const previewRecess = countRecessedDateVerts(preview.exportMesh.geometry, params)
+  const previewPrimaryRecess = countRecessedPrimaryVerts(preview.exportMesh.geometry, params)
   log(`preview recessed date verts near date sector: ${previewRecess}`)
+  log(`preview recessed primary verts near text sector: ${previewPrimaryRecess}`)
   assert(previewRecess > 0, 'preview date recesses in metal (ink-off visible path)')
+  assert(previewPrimaryRecess > 0, 'preview primary inscription recesses in metal')
+  assertFiniteGeometry(preview.exportMesh.geometry, 'preview band')
+
+  const { layoutXToWorldAngle } = await import('../src/textEngraving.ts')
+  const directionStart = 0.4
+  const layoutX = 1.25
+  const innerRadius = params.innerDiameterMm / 2
+  const outerRadius = innerRadius + params.bandThicknessMm
+  const innerArc =
+    (layoutXToWorldAngle(layoutX, innerRadius, directionStart) - directionStart) * innerRadius
+  const outerArc =
+    (layoutXToWorldAngle(layoutX, outerRadius, directionStart) - directionStart) * outerRadius
+  const dateArc =
+    (layoutXToWorldAngle(layoutX, innerRadius, directionStart, -1) - directionStart) * innerRadius
+  assert(Math.abs(innerArc - layoutX) < 1e-9, 'inner text keeps source reading direction')
+  assert(Math.abs(outerArc - layoutX) < 1e-9, 'outer text keeps source reading direction')
+  assert(Math.sign(innerArc) === Math.sign(outerArc), 'inner and outer text are not mirrored')
+  assert(Math.abs(dateArc + layoutX) < 1e-9, 'date keeps its established reading direction')
+
+  // --- Real first-load text, then selected-quality viewport from cached layout ---
+  const defaultPreviewParams = {
+    ...DEFAULT_PARAMS,
+    innerText: 'Além do universo, em perpetuidade.',
+    innerDateText: '27.09.2026',
+    quality: 'draft' as const,
+  }
+  const stopDefaultPreviewGapProbe = beginMainThreadGapProbe()
+  const defaultPreview = await buildRing(defaultPreviewParams, { mode: 'preview' })
+  const defaultPreviewMaxGapMs = await stopDefaultPreviewGapProbe()
+  log(
+    `preview-default: durationMs=${defaultPreview.stages.durationMs} ` +
+      `layoutMs=${defaultPreview.stages.layoutMs} ` +
+      `displacementMs=${defaultPreview.stages.displacementMs} ` +
+      `maxMainThreadGapMs=${defaultPreviewMaxGapMs} tris=${defaultPreview.triangleCount}`,
+  )
+  assert(defaultPreview.stages.ranDateCsg === false, 'default preview skips date CSG')
+  assert(defaultPreviewMaxGapMs < 150, 'default preview should yield before a 150 ms long task')
+
+  // --- Settled viewport: selected quality but never blocking CSG ---
+  const settledParams = { ...defaultPreviewParams, quality: 'normal' as const }
+  const stopSettledGapProbe = beginMainThreadGapProbe()
+  const settled = await buildRing(settledParams, { mode: 'settled' })
+  const settledMaxGapMs = await stopSettledGapProbe()
+  log(
+    `settled-default: durationMs=${settled.stages.durationMs} ` +
+      `layoutMs=${settled.stages.layoutMs} displacementMs=${settled.stages.displacementMs} ` +
+      `maxMainThreadGapMs=${settledMaxGapMs} ` +
+      `ranDisplacement=${settled.stages.ranDisplacement} ` +
+      `ranDateCsg=${settled.stages.ranDateCsg} tris=${settled.triangleCount}`,
+  )
+  assert(settled.stages.mode === 'settled', 'settled mode flag')
+  assert(settled.stages.ranDisplacement === true, 'settled viewport displaces engraving')
+  assert(settled.stages.ranDateCsg === false, 'settled viewport must skip date CSG')
+  assert(settled.stages.layoutMs < 75, 'settled build should reuse preview text layout')
+  assert(settledMaxGapMs < 150, 'settled viewport should yield before a 150 ms long task')
+  assert(
+    settled.stages.durationMs < 3000,
+    'default normal-quality settled build should stay below the 3 s regression ceiling',
+  )
+
+  const stopHighGapProbe = beginMainThreadGapProbe()
+  const highSettled = await buildRing(
+    { ...defaultPreviewParams, quality: 'high' },
+    { mode: 'settled' },
+  )
+  const highMaxGapMs = await stopHighGapProbe()
+  log(
+    `settled-high: durationMs=${highSettled.stages.durationMs} ` +
+      `layoutMs=${highSettled.stages.layoutMs} ` +
+      `displacementMs=${highSettled.stages.displacementMs} ` +
+      `maxMainThreadGapMs=${highMaxGapMs} tris=${highSettled.triangleCount}`,
+  )
+  assert(highSettled.stages.ranDateCsg === false, 'high viewport must skip date CSG')
+  assert(highMaxGapMs < 150, 'high viewport should yield before a 150 ms long task')
+
+  const highBlank = buildBlankRing(defaultPreviewParams, 'high')
+  const extraBlank = buildBlankRing(defaultPreviewParams, 'extra')
+  assert(
+    extraBlank.triangleCount === highBlank.triangleCount * 1.5,
+    'extra uses 960 radial segments versus high at 640',
+  )
+  log(`quality-extra: high=${highBlank.triangleCount} extra=${extraBlank.triangleCount} tris`)
+  disposeBuiltRing(highBlank)
+  disposeBuiltRing(extraBlank)
+
+  // --- Rapid edits: stale text layout must cancel at a cooperative checkpoint ---
+  let cancellationChecks = 0
+  let cancelled = false
+  const cancelStarted = performance.now()
+  try {
+    await buildRing(
+      { ...params, innerText: 'cancel-me '.repeat(20) },
+      {
+        mode: 'preview',
+        isCancelled: () => ++cancellationChecks >= 8,
+      },
+    )
+  } catch (err) {
+    cancelled = err instanceof DOMException && err.name === 'AbortError'
+  }
+  const cancelDurationMs = Math.round(performance.now() - cancelStarted)
+  log(`cancelled-stale-build: durationMs=${cancelDurationMs} checks=${cancellationChecks}`)
+  assert(cancelled, 'stale layout build should abort')
+  assert(cancelDurationMs < 1000, 'stale layout build should abort promptly')
 
   // --- Final: must run date CSG and keep export mesh ---
   const tFin0 = performance.now()
@@ -116,6 +290,8 @@ async function main(): Promise<void> {
   const tFin1 = performance.now()
   log(
     `final: durationMs=${final.stages.durationMs} wallMs=${Math.round(tFin1 - tFin0)} ` +
+      `layoutMs=${final.stages.layoutMs} displacementMs=${final.stages.displacementMs} ` +
+      `dateCsgMs=${final.stages.dateCsgMs} ` +
       `ranDisplacement=${final.stages.ranDisplacement} ranDateCsg=${final.stages.ranDateCsg} ` +
       `tris=${final.triangleCount}`,
   )
@@ -131,6 +307,7 @@ async function main(): Promise<void> {
   const finalRecess = countRecessedDateVerts(final.exportMesh.geometry, params)
   log(`final recessed date verts near date sector: ${finalRecess}`)
   assert(finalRecess > 0, 'final date recesses in metal (not ink-only)')
+  assertFiniteGeometry(final.exportMesh.geometry, 'final band')
 
   // Preview cheaper than final when CSG would run
   log(
@@ -149,7 +326,31 @@ async function main(): Promise<void> {
   // Export mesh is the band (no requirement that ink is in export)
   assert(final.exportMesh.name === 'wedding-ring-band', 'export mesh is solid band')
 
+  // Path tessellation must stay valid across every selectable inscription font.
+  const fontCases: RingParams['font'][] = [
+    'tengwar-annatar',
+    'tengwar-annatar-italic',
+    'ring-inscription',
+    'elvish-uncial',
+    'cinzel',
+  ]
+  for (const font of fontCases) {
+    const fontRing = await buildRing(
+      { ...params, font, innerText: 'test', innerDateText: '' },
+      { mode: 'preview' },
+    )
+    assert(fontRing.stages.ranDateCsg === false, `${font} preview skips CSG`)
+    assert(countInkMeshes(fontRing) > 0, `${font} produces visible inscription meshes`)
+    assertFiniteGeometry(fontRing.exportMesh.geometry, `${font} band`)
+    disposeBuiltRing(fontRing)
+  }
+  log(`font-smoke: ${fontCases.length} selectable fonts passed`)
+
+  disposeBuiltRing(blank)
   disposeBuiltRing(preview)
+  disposeBuiltRing(defaultPreview)
+  disposeBuiltRing(settled)
+  disposeBuiltRing(highSettled)
   disposeBuiltRing(final)
 
   log('ALL ASSERTIONS PASSED')
@@ -163,6 +364,8 @@ async function main(): Promise<void> {
       path.join(scratch, 'build-timings.txt'),
       [
         `preview_ms=${preview.stages.durationMs}`,
+        `preview_default_ms=${defaultPreview.stages.durationMs}`,
+        `settled_default_ms=${settled.stages.durationMs}`,
         `final_ms=${final.stages.durationMs}`,
         `preview_ranDateCsg=${preview.stages.ranDateCsg}`,
         `final_ranDateCsg=${final.stages.ranDateCsg}`,
