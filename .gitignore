@@ -45,3 +45,6 @@ coverage/
 .cache/
 *.tsbuildinfo
 .vercel
+
+# Git worktrees
+.worktrees/

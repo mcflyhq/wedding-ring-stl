@@ -84,7 +84,7 @@ export interface RingParams {
 
 export const DEFAULT_PARAMS: RingParams = {
   innerDiameterMm: 17.3,
-  bandWidthMm: 5.2,
+  bandWidthMm: 3.5,
   bandThicknessMm: 1.6,
   bandProfile: 'wave',
   // Localized pinch: hard waist in one sector only; rest of band flat
@@ -92,7 +92,7 @@ export const DEFAULT_PARAMS: RingParams = {
   waveCount: 1,
   wavePhaseDeg: 0,
   waveSpanDeg: 100,
-  waveSharpness: 0.45,
+  waveSharpness: 0,
   waveAsymmetry: 0,
   waveCharacter: 1,
   innerText: '',
