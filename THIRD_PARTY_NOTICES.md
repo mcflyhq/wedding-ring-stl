@@ -1,49 +1,46 @@
 # Third-party notices
 
-This project bundles or depends on third-party software and fonts. The
-application source code is MIT-licensed; fonts and dependencies keep their own
-terms.
+Application source in this repository is MIT (`LICENSE`). Everything below keeps
+its own terms. Versions: see `package-lock.json`.
 
-## Runtime dependencies (npm)
+## npm packages
 
-See `package.json` / `package-lock.json` for versions. Major libraries:
+| Package | License | Role |
+|---------|---------|------|
+| [three](https://github.com/mrdoob/three.js) | MIT | 3D |
+| [three-bvh-csg](https://github.com/gkjohnson/three-bvh-csg) | MIT | Date CSG |
+| [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) | MIT | BVH peer of CSG |
+| [opentype.js](https://github.com/opentypejs/opentype.js) | MIT | Font outlines |
+| [tengwar](https://github.com/kriskowal/tengwarjs) | MIT (`LICENSE.md` in package) | Annatar / Dan Smith helpers |
+| [lil-gui](https://github.com/georgealways/lil-gui) | MIT | Listed dependency (UI kit) |
 
-| Package | License (typical) | Use |
-|---------|-------------------|-----|
-| [three](https://github.com/mrdoob/three.js) | MIT | 3D rendering |
-| [three-bvh-csg](https://github.com/gkjohnson/three-bvh-csg) | MIT | Date cavity CSG |
-| [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) | MIT | Mesh BVH (CSG peer) |
-| [opentype.js](https://github.com/opentypejs/opentype.js) | MIT | Font outline parsing |
-| [tengwar](https://github.com/kriskowal/tengwarjs) | MIT | Annatar / Dan Smith helpers |
-| [lil-gui](https://github.com/georgealways/lil-gui) | MIT | Optional UI dependency |
+Dev-only tools (TypeScript, Vite, vite-node, `@types/*`) are not shipped in the
+browser bundle. Check each package's own license file for the pinned version.
 
-Always verify the license file inside each package for the exact terms of the
-version you install.
+## Mode data (`src/tecendil/modes/`)
 
-## Tecendil-compatible mode data
+JSON mode shape matches the open format from
+[arnog/tecendil-js](https://github.com/arnog/tecendil-js) (MIT, © Arno Gourdol).
+Annatar key encoding is implemented here. No network calls to tecendil.com.
+Not affiliated with Tecendil.
 
-Offline mode JSON under `src/tecendil/modes/` follows the open mode format used by
-[arnog/tecendil-js](https://github.com/arnog/tecendil-js) (preprocess / map / words /
-tengwar literals). Encoding to Annatar keys is implemented in this repo.
+## Fonts (`public/fonts/`)
 
-This project does **not** call tecendil.com and is not affiliated with Tecendil.
+| Font | Files | Terms |
+|------|-------|--------|
+| Tengwar Annatar | `TengwarAnnatar*.ttf` | © Johan Winge. Freeware. Full text: `TengwarAnnatar-LICENSE.txt` and `TengwarAnnatar-readme.txt`. Redistribute only with those notices; do not sell the font alone; commercial products using the font must send the author a free copy of the product (his terms). Tolkien's tengwar as a writing system may need Estate permission for commercial use. Filenames here are not the original `tngan*.ttf` names. |
+| Inter | `Inter-Regular.ttf` | SIL OFL 1.1: https://github.com/rsms/inter/blob/master/LICENSE.txt |
+| Cinzel / Cinzel Decorative | `Cinzel*.ttf`, `CinzelDecorative-*.ttf` | SIL OFL 1.1 (Google Fonts): https://scripts.sil.org/OFL |
+| Uncial Antiqua | `UncialAntiqua.ttf` | © 2011 Brian J. Bonislawsky / Astigmatic (AOETI). Confirm Astigmatic free-font terms before redistributing the file in a commercial font package. |
 
-Check upstream license terms if you extract or redistribute those mode files alone.
+## What you can do with this repo
 
-## Fonts in `public/fonts/`
+| Piece | Summary |
+|-------|---------|
+| App source | MIT |
+| OFL fonts | Keep OFL notices; OFL rules apply |
+| Tengwar Annatar | Follow Winge's license next to the TTFs |
+| Uncial Antiqua | Follow Astigmatic terms |
+| Mode JSON format | MIT upstream (tecendil-js); our encoding code is MIT with the app |
 
-| Font | Files | License / notes |
-|------|-------|-----------------|
-| **Tengwar Annatar** | `TengwarAnnatar*.ttf` | © Johan Winge. Freeware. See `public/fonts/TengwarAnnatar-LICENSE.txt` and `TengwarAnnatar-readme.txt`. Redistribution and commercial-use conditions apply (including providing the author a free copy of commercial products that use the font). Using Tolkien's tengwar in commercial products may also require rights from the Tolkien Estate. Filenames here differ from the original `tngan*.ttf` package names; keep the license/readme next to the TTFs when redistributing. |
-| **Inter** | `Inter-Regular.ttf` | [SIL Open Font License 1.1](https://github.com/rsms/inter/blob/master/LICENSE.txt) |
-| **Cinzel / Cinzel Decorative** | `Cinzel-*.ttf`, `CinzelDecorative-*.ttf` | [SIL Open Font License 1.1](https://scripts.sil.org/OFL) (Google Fonts distribution) |
-| **Uncial Antiqua** | `UncialAntiqua.ttf` | Copyright © 2011 Brian J. Bonislawsky DBA Astigmatic (AOETI). Confirm current Astigmatic free-font terms before commercial redistribution of the font file alone. |
-
-### Redistributing this repo
-
-- **Source code:** MIT (see `LICENSE`).
-- **Tengwar Annatar:** keep the license + readme files next to the TTFs; do not charge for the font alone; follow Johan Winge's conditions for commercial products.
-- **OFL fonts (Inter, Cinzel):** redistributable under OFL rules (retain copyright and license notices).
-- **Uncial Antiqua:** verify Astigmatic terms for your use case before shipping the font in a commercial product package.
-
-This project does **not** claim affiliation with the Tolkien Estate, Middle-earth Enterprises, or Tecendil.
+No affiliation with the Tolkien Estate, Middle-earth Enterprises, or Tecendil.

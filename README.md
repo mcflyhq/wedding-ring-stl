@@ -84,7 +84,6 @@ Issues and pull requests welcome.
 
 1. [CONTRIBUTING.md](./CONTRIBUTING.md) - setup, style, PR checklist
 2. [Bug report](https://github.com/mcflyhq/wedding-ring-stl/issues/new?template=bug_report.yml) / [Feature request](https://github.com/mcflyhq/wedding-ring-stl/issues/new?template=feature_request.yml)
-3. [Code of Conduct](./CODE_OF_CONDUCT.md)
 
 ```bash
 npm run build

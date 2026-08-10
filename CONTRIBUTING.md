@@ -10,8 +10,6 @@ Thanks for helping improve **One Ring Studio**. Short path: clone → change →
 - Docs and examples
 - Tests and tooling
 
-Please read the [Code of Conduct](./CODE_OF_CONDUCT.md).
-
 ## Development setup
 
 **Requirements:** Node.js 20+ (LTS recommended), npm 10+.
