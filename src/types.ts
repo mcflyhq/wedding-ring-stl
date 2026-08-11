@@ -30,9 +30,20 @@ export interface RingParams {
   wavePhaseDeg: number
   /**
    * How much of the circumference the pinch occupies (degrees).
-   * Rest of the band stays a flat classic D. Typical 70–140°.
+   * Derived as max(upper, lower) edge length for densification / overlays.
+   * Prefer `waveTopSpanDeg` / `waveBotSpanDeg` for independent edge control.
    */
   waveSpanDeg: number
+  /**
+   * Angular length of the **upper** edge pinch (degrees along the band).
+   * Rest of that edge stays flat. Typical 40–180°.
+   */
+  waveTopSpanDeg: number
+  /**
+   * Angular length of the **lower** edge pinch (degrees along the band).
+   * Make this differ from the upper length for an organic, staggered silhouette.
+   */
+  waveBotSpanDeg: number
   /**
    * Corner hardness of the pinch motif only (does not change amplitude).
    * 1 = sharp polyline breaks; 0 = smooth spline through the same peaks —
@@ -92,6 +103,8 @@ export const DEFAULT_PARAMS: RingParams = {
   waveCount: 1,
   wavePhaseDeg: 0,
   waveSpanDeg: 100,
+  waveTopSpanDeg: 100,
+  waveBotSpanDeg: 100,
   waveSharpness: 0,
   waveAsymmetry: 0,
   waveCharacter: 1,

@@ -220,8 +220,15 @@ function updateDimLabels() {
   if (waveAmp) waveAmp.textContent = `${fmt(params.waveAmplitudeMm, 2)} mm`
   const wavePhase = document.getElementById('val-wave-phase')
   if (wavePhase) wavePhase.textContent = `${Math.round(params.wavePhaseDeg)}°`
-  const waveSpan = document.getElementById('val-wave-span')
-  if (waveSpan) waveSpan.textContent = `${Math.round(params.waveSpanDeg)}°`
+  // Flank path lengths (3D) are filled after measureRing in updateDimensionOverlay
+  const waveTopSpan = document.getElementById('val-wave-top-span')
+  if (waveTopSpan && !waveTopSpan.dataset.flankMm) {
+    waveTopSpan.textContent = `${Math.round(params.waveTopSpanDeg)}°`
+  }
+  const waveBotSpan = document.getElementById('val-wave-bot-span')
+  if (waveBotSpan && !waveBotSpan.dataset.flankMm) {
+    waveBotSpan.textContent = `${Math.round(params.waveBotSpanDeg)}°`
+  }
   const waveSharp = document.getElementById('val-wave-sharpness')
   if (waveSharp) waveSharp.textContent = fmt(params.waveSharpness, 2)
 
@@ -250,6 +257,27 @@ function syncLabels() {
 
 function updateDimensionOverlay() {
   const m = dimOverlay.update(params)
+  // Live flank path lengths next to the sliders (true 3D edge length in mm)
+  const waveTopSpan = document.getElementById('val-wave-top-span')
+  if (waveTopSpan) {
+    if (m.isWave && m.pinchTopFlankMm > 0) {
+      waveTopSpan.dataset.flankMm = '1'
+      waveTopSpan.textContent = `${Math.round(m.pinchTopSpanDeg)}° · ${fmt(m.pinchTopFlankMm, 2)} mm`
+    } else {
+      delete waveTopSpan.dataset.flankMm
+      waveTopSpan.textContent = `${Math.round(params.waveTopSpanDeg)}°`
+    }
+  }
+  const waveBotSpan = document.getElementById('val-wave-bot-span')
+  if (waveBotSpan) {
+    if (m.isWave && m.pinchBotFlankMm > 0) {
+      waveBotSpan.dataset.flankMm = '1'
+      waveBotSpan.textContent = `${Math.round(m.pinchBotSpanDeg)}° · ${fmt(m.pinchBotFlankMm, 2)} mm`
+    } else {
+      delete waveBotSpan.dataset.flankMm
+      waveBotSpan.textContent = `${Math.round(params.waveBotSpanDeg)}°`
+    }
+  }
   // Surface key pinch measurement in the status bar for quick reading
   if (m.isWave && params.waveAmplitudeMm > 0) {
     const pin = ` · pinch full width <strong class="dim-readout">${fmt(m.pinchEnvelopeMm, 2)} mm</strong>`
@@ -304,11 +332,32 @@ function readParamsFromUi(): RingParams {
       360,
       DEFAULT_PARAMS.wavePhaseDeg,
     ),
-    waveSpanDeg: clampNum(
-      Number(($('waveSpanDeg') as HTMLInputElement).value),
+    waveTopSpanDeg: clampNum(
+      Number(($('waveTopSpanDeg') as HTMLInputElement).value),
       40,
       220,
-      DEFAULT_PARAMS.waveSpanDeg,
+      DEFAULT_PARAMS.waveTopSpanDeg,
+    ),
+    waveBotSpanDeg: clampNum(
+      Number(($('waveBotSpanDeg') as HTMLInputElement).value),
+      40,
+      220,
+      DEFAULT_PARAMS.waveBotSpanDeg,
+    ),
+    // Derived: densify / overlay envelope uses the longer edge
+    waveSpanDeg: Math.max(
+      clampNum(
+        Number(($('waveTopSpanDeg') as HTMLInputElement).value),
+        40,
+        220,
+        DEFAULT_PARAMS.waveTopSpanDeg,
+      ),
+      clampNum(
+        Number(($('waveBotSpanDeg') as HTMLInputElement).value),
+        40,
+        220,
+        DEFAULT_PARAMS.waveBotSpanDeg,
+      ),
     ),
     waveSharpness: clampNum(
       Number(($('waveSharpness') as HTMLInputElement).value),
@@ -342,7 +391,11 @@ function writeParamsToUi(p: RingParams) {
   ;($('waveAmplitudeMm') as HTMLInputElement).value = String(p.waveAmplitudeMm)
   ;($('waveCount') as HTMLInputElement).value = '1'
   ;($('wavePhaseDeg') as HTMLInputElement).value = String(p.wavePhaseDeg)
-  ;($('waveSpanDeg') as HTMLInputElement).value = String(p.waveSpanDeg)
+  ;($('waveTopSpanDeg') as HTMLInputElement).value = String(p.waveTopSpanDeg)
+  ;($('waveBotSpanDeg') as HTMLInputElement).value = String(p.waveBotSpanDeg)
+  ;($('waveSpanDeg') as HTMLInputElement).value = String(
+    Math.max(p.waveTopSpanDeg, p.waveBotSpanDeg, p.waveSpanDeg),
+  )
   ;($('waveSharpness') as HTMLInputElement).value = String(p.waveSharpness)
   ;($('waveAsymmetry') as HTMLInputElement).value = '0'
   ;($('waveCharacter') as HTMLInputElement).value = '1'
@@ -420,6 +473,8 @@ function paramsEqualGeom(a: RingParams, b: RingParams): boolean {
     a.waveCount === b.waveCount &&
     a.wavePhaseDeg === b.wavePhaseDeg &&
     a.waveSpanDeg === b.waveSpanDeg &&
+    a.waveTopSpanDeg === b.waveTopSpanDeg &&
+    a.waveBotSpanDeg === b.waveBotSpanDeg &&
     a.waveSharpness === b.waveSharpness &&
     a.waveAsymmetry === b.waveAsymmetry &&
     a.waveCharacter === b.waveCharacter &&
@@ -653,7 +708,8 @@ const geomLiveIds = [
   'bandProfile',
   'waveAmplitudeMm',
   'wavePhaseDeg',
-  'waveSpanDeg',
+  'waveTopSpanDeg',
+  'waveBotSpanDeg',
   'waveSharpness',
   'textDepthMm',
   'textSizeMm',
@@ -669,7 +725,8 @@ const bandShapeIds = new Set([
   'bandProfile',
   'waveAmplitudeMm',
   'wavePhaseDeg',
-  'waveSpanDeg',
+  'waveTopSpanDeg',
+  'waveBotSpanDeg',
   'waveSharpness',
 ])
 

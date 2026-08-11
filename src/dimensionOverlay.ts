@@ -1,6 +1,11 @@
 import * as THREE from 'three'
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js'
-import { bandEdgesAt, maxBandHalfExtentMm } from './ringGeometry'
+import {
+  bandEdgesAt,
+  maxBandHalfExtentMm,
+  measurePinchFlankPaths,
+  type PinchFlankPath,
+} from './ringGeometry'
 import type { RingParams } from './types'
 
 export interface RingMeasurements {
@@ -23,9 +28,38 @@ export interface RingMeasurements {
   pinchZMinMm: number
   /** Peak |mid-plane| offset inside the pinch. */
   pinchMidExcursionMm: number
+  /** Max of upper/lower edge spans (envelope for densification). */
   pinchSpanDeg: number
+  /** Angular length of the upper edge pinch (degrees). */
+  pinchTopSpanDeg: number
+  /** Angular length of the lower edge pinch (degrees). */
+  pinchBotSpanDeg: number
+  /**
+   * Circumferential arc of the upper edge pinch window (outerR · θ).
+   */
+  pinchTopSpanMm: number
+  /**
+   * Circumferential arc of the lower edge pinch window (outerR · θ).
+   */
+  pinchBotSpanMm: number
+  /**
+   * 3D path length of the steep upper flank of the S (the visible Z diagonal), mm.
+   */
+  pinchTopFlankMm: number
+  /**
+   * 3D path length of the steep lower flank of the S (parallel Z diagonal), mm.
+   */
+  pinchBotFlankMm: number
+  /** Sampled polylines for drawing flank dimensions. */
+  topFlankPath: PinchFlankPath
+  botFlankPath: PinchFlankPath
   pinchPhaseDeg: number
   isWave: boolean
+}
+
+function clampEdgeSpanDeg(deg: number, fallback: number): number {
+  const v = deg > 0 ? deg : fallback
+  return Math.min(350, Math.max(20, v || 100))
 }
 
 /** Dense sample of the pinch sector (or full ring for classic D). */
@@ -39,9 +73,25 @@ export function measureRing(params: RingParams): RingMeasurements {
   let pinchLocalWidth = params.bandWidthMm
   let midExcursion = 0
 
-  if (isWave && params.waveAmplitudeMm > 0 && params.waveSpanDeg > 0) {
+  const fallback = params.waveSpanDeg || 100
+  const topSpanDeg = isWave ? clampEdgeSpanDeg(params.waveTopSpanDeg, fallback) : 0
+  const botSpanDeg = isWave ? clampEdgeSpanDeg(params.waveBotSpanDeg, fallback) : 0
+  const maxSpanDeg = Math.max(topSpanDeg, botSpanDeg)
+  // Outer-circumference arc length for each edge window
+  const topSpanMm = isWave ? outerR * ((topSpanDeg * Math.PI) / 180) : 0
+  const botSpanMm = isWave ? outerR * ((botSpanDeg * Math.PI) / 180) : 0
+
+  const flanks =
+    isWave && params.waveAmplitudeMm > 0
+      ? measurePinchFlankPaths(params)
+      : {
+          top: { lengthMm: 0, points: [], mid: { x: 0, y: 0, z: 0 } },
+          bot: { lengthMm: 0, points: [], mid: { x: 0, y: 0, z: 0 } },
+        }
+
+  if (isWave && params.waveAmplitudeMm > 0 && maxSpanDeg > 0) {
     const phase = (params.wavePhaseDeg * Math.PI) / 180
-    const span = (Math.min(350, Math.max(20, params.waveSpanDeg)) * Math.PI) / 180
+    const span = (maxSpanDeg * Math.PI) / 180
     const n = 96
     for (let i = 0; i <= n; i++) {
       const u = i / n
@@ -70,7 +120,15 @@ export function measureRing(params: RingParams): RingMeasurements {
     pinchZMaxMm: pinchZMax,
     pinchZMinMm: pinchZMin,
     pinchMidExcursionMm: midExcursion,
-    pinchSpanDeg: isWave ? params.waveSpanDeg : 0,
+    pinchSpanDeg: isWave ? maxSpanDeg : 0,
+    pinchTopSpanDeg: isWave ? topSpanDeg : 0,
+    pinchBotSpanDeg: isWave ? botSpanDeg : 0,
+    pinchTopSpanMm: topSpanMm,
+    pinchBotSpanMm: botSpanMm,
+    pinchTopFlankMm: flanks.top.lengthMm,
+    pinchBotFlankMm: flanks.bot.lengthMm,
+    topFlankPath: flanks.top,
+    botFlankPath: flanks.bot,
     pinchPhaseDeg: isWave ? params.wavePhaseDeg : 0,
     isWave,
   }
@@ -177,6 +235,8 @@ export class DimensionOverlay {
       params.waveAmplitudeMm,
       params.wavePhaseDeg,
       params.waveSpanDeg,
+      params.waveTopSpanDeg,
+      params.waveBotSpanDeg,
       params.waveSharpness,
     ])
     if (key === this.lastKey) return m
@@ -290,7 +350,7 @@ export class DimensionOverlay {
     }
 
     // ── Pinch sector annotations ────────────────────────────────────────────
-    if (m.isWave && params.waveAmplitudeMm > 0 && params.waveSpanDeg > 0) {
+    if (m.isWave && params.waveAmplitudeMm > 0 && m.pinchSpanDeg > 0) {
       const cos = Math.cos(pinchAngle)
       const sin = Math.sin(pinchAngle)
       const rDim = outerR + 2.4
@@ -365,45 +425,131 @@ export class DimensionOverlay {
       )
       this.group.add(localLab)
 
-      // Angular span arc (on a plane slightly above max envelope)
-      const spanRad = (Math.min(350, Math.max(20, params.waveSpanDeg)) * Math.PI) / 180
-      const arcR = outerR + 3.4
-      const zArc = zMax + 1.2
-      const arcPts: THREE.Vector3[] = []
-      const arcSteps = Math.max(16, Math.ceil(params.waveSpanDeg / 4))
-      for (let i = 0; i <= arcSteps; i++) {
-        const u = i / arcSteps
-        const θ = pinchAngle - spanRad / 2 + u * spanRad
-        arcPts.push(new THREE.Vector3(Math.cos(θ) * arcR, Math.sin(θ) * arcR, zArc))
-      }
-      this.group.add(makeLine(arcPts, 0x9ecbff))
-      // Arc end ticks
-      const θ0 = pinchAngle - spanRad / 2
-      const θ1 = pinchAngle + spanRad / 2
-      for (const θ of [θ0, θ1]) {
-        const c = Math.cos(θ)
-        const s = Math.sin(θ)
-        this.group.add(
-          makeLine(
-            [
-              new THREE.Vector3(c * (arcR - 0.45), s * (arcR - 0.45), zArc),
-              new THREE.Vector3(c * (arcR + 0.45), s * (arcR + 0.45), zArc),
-            ],
-            0x9ecbff,
-          ),
+      // ── Steep S-flank path lengths (the two parallel Z diagonals) ─────────
+      // Drawn on the outer metal surface — these are the edges the user marks
+      // as the pinch “sides”, measured as true 3D path length in mm.
+      const FLANK_TOP_COLOR = 0xff4d4d
+      const FLANK_BOT_COLOR = 0xff6b4d
+
+      const drawFlank = (
+        path: PinchFlankPath,
+        name: string,
+        color: number,
+        labelClass: string,
+        labelNudge: number,
+      ): void => {
+        if (path.points.length < 2 || path.lengthMm < 0.05) return
+        const pts = path.points.map((p) => new THREE.Vector3(p.x, p.y, p.z))
+        this.group.add(makeLine(pts, color))
+        // End ticks normal-ish to the path (short radial ticks)
+        for (const end of [pts[0]!, pts[pts.length - 1]!]) {
+          const er = Math.hypot(end.x, end.y) || 1
+          const ux = end.x / er
+          const uy = end.y / er
+          this.group.add(
+            makeLine(
+              [
+                new THREE.Vector3(end.x - ux * 0.35, end.y - uy * 0.35, end.z),
+                new THREE.Vector3(end.x + ux * 0.35, end.y + uy * 0.35, end.z),
+              ],
+              color,
+            ),
+          )
+        }
+        const mid = path.mid
+        const mr = Math.hypot(mid.x, mid.y) || 1
+        const lab = makeLabel(
+          `<span class="dim-name">${name}</span><span class="dim-val">${fmtMm(path.lengthMm)}</span>`,
+          labelClass,
         )
+        lab.position.set(
+          mid.x + (mid.x / mr) * labelNudge,
+          mid.y + (mid.y / mr) * labelNudge,
+          mid.z,
+        )
+        this.group.add(lab)
       }
-      const midθ = pinchAngle
-      const angleLab = makeLabel(
-        `<span class="dim-name">Pinch angle</span><span class="dim-val">${fmtDeg(m.pinchSpanDeg)}</span>`,
+
+      drawFlank(
+        m.topFlankPath,
+        'Upper flank',
+        FLANK_TOP_COLOR,
+        'dim-label dim-label-flank-top',
+        1.1,
+      )
+      drawFlank(
+        m.botFlankPath,
+        'Lower flank',
+        FLANK_BOT_COLOR,
+        'dim-label dim-label-flank-bot',
+        1.35,
+      )
+
+      // Secondary: full window arc (how far around the ring each edge runs)
+      const topSpan = m.pinchTopSpanDeg
+      const botSpan = m.pinchBotSpanDeg
+      const addSpanArc = (
+        spanDeg: number,
+        spanMm: number,
+        zArc: number,
+        arcR: number,
+        color: number,
+        name: string,
+        labelClass: string,
+      ): void => {
+        const spanRad = (spanDeg * Math.PI) / 180
+        const half = spanRad / 2
+        const steps = Math.max(16, Math.ceil(spanDeg / 4))
+        const pts: THREE.Vector3[] = []
+        for (let i = 0; i <= steps; i++) {
+          const u = i / steps
+          const θ = pinchAngle - half + u * spanRad
+          pts.push(new THREE.Vector3(Math.cos(θ) * arcR, Math.sin(θ) * arcR, zArc))
+        }
+        this.group.add(makeLine(pts, color))
+        for (const θ of [pinchAngle - half, pinchAngle + half]) {
+          const c = Math.cos(θ)
+          const s = Math.sin(θ)
+          this.group.add(
+            makeLine(
+              [
+                new THREE.Vector3(c * (arcR - 0.45), s * (arcR - 0.45), zArc),
+                new THREE.Vector3(c * (arcR + 0.45), s * (arcR + 0.45), zArc),
+              ],
+              color,
+            ),
+          )
+        }
+        const lab = makeLabel(
+          `<span class="dim-name">${name}</span><span class="dim-val">${fmtMm(spanMm)} · ${fmtDeg(spanDeg)}</span>`,
+          labelClass,
+        )
+        lab.position.set(
+          Math.cos(pinchAngle) * (arcR + 0.15),
+          Math.sin(pinchAngle) * (arcR + 0.15),
+          zArc + 0.5,
+        )
+        this.group.add(lab)
+      }
+
+      addSpanArc(
+        topSpan,
+        m.pinchTopSpanMm,
+        zMax + 1.15,
+        outerR + 3.4,
+        0x9ecbff,
+        'Upper window',
         'dim-label dim-label-angle',
       )
-      angleLab.position.set(
-        Math.cos(midθ) * (arcR + 0.2),
-        Math.sin(midθ) * (arcR + 0.2),
-        zArc + 0.55,
+      addSpanArc(
+        botSpan,
+        m.pinchBotSpanMm,
+        zMin - 1.15,
+        outerR + (Math.abs(topSpan - botSpan) < 0.5 ? 3.4 : 3.9),
+        0xc4a8ff,
+        'Lower window',
+        'dim-label dim-label-edge-bot',
       )
-      this.group.add(angleLab)
 
       // Amplitude callout at crest
       if (m.pinchMidExcursionMm > 0.05) {

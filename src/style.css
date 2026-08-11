@@ -703,6 +703,34 @@ body {
   color: #9ecbff;
 }
 
+.dim-label-edge-bot {
+  border-color: rgba(196, 168, 255, 0.55);
+}
+
+.dim-label-edge-bot .dim-val {
+  color: #c4a8ff;
+}
+
+.dim-label-flank-top {
+  border-color: rgba(255, 77, 77, 0.7);
+  background: rgba(32, 10, 10, 0.9);
+}
+
+.dim-label-flank-top .dim-val {
+  color: #ff6b6b;
+  font-size: 0.88rem;
+}
+
+.dim-label-flank-bot {
+  border-color: rgba(255, 107, 77, 0.7);
+  background: rgba(32, 14, 8, 0.9);
+}
+
+.dim-label-flank-bot .dim-val {
+  color: #ff8a5c;
+  font-size: 0.88rem;
+}
+
 .dim-readout {
   font-variant-numeric: tabular-nums;
   color: var(--gold-soft);

@@ -208,18 +208,45 @@ export type WaveEdgeParams = Pick<
   | 'waveCount'
   | 'wavePhaseDeg'
   | 'waveSpanDeg'
+  | 'waveTopSpanDeg'
+  | 'waveBotSpanDeg'
   | 'waveSharpness'
   | 'waveAsymmetry'
   | 'waveCharacter'
 >
 
+/** Clamp an edge span (degrees) to a safe manufacturing range. */
+function clampSpanDeg(deg: number): number {
+  return Math.min(350, Math.max(20, deg))
+}
+
+/**
+ * Effective upper/lower pinch spans (degrees).
+ * Falls back to `waveSpanDeg` when a dedicated edge length is missing/zero
+ * so older param blobs still build a valid ring.
+ */
+export function edgeSpanDegs(params: Pick<WaveEdgeParams, 'waveSpanDeg' | 'waveTopSpanDeg' | 'waveBotSpanDeg'>): {
+  topDeg: number
+  botDeg: number
+  maxDeg: number
+} {
+  const fallback = clampSpanDeg(params.waveSpanDeg || 100)
+  const topRaw = params.waveTopSpanDeg > 0 ? params.waveTopSpanDeg : fallback
+  const botRaw = params.waveBotSpanDeg > 0 ? params.waveBotSpanDeg : fallback
+  const topDeg = clampSpanDeg(topRaw)
+  const botDeg = clampSpanDeg(botRaw)
+  return { topDeg, botDeg, maxDeg: Math.max(topDeg, botDeg) }
+}
+
 /**
  * Local upper/lower edges at angle θ (radians).
  * Classic D profile returns constant ±bandWidth/2.
  *
- * Wave profile: **localized pinch** only inside `waveSpanDeg` around
- * `wavePhaseDeg`. Outside that window the band is an undistorted flat D.
- * Inside, constant width follows a hard-waist centerline (screenshot kink).
+ * Wave profile: **localized pinch** around `wavePhaseDeg`. Upper and lower
+ * edges may occupy different angular lengths (`waveTopSpanDeg` /
+ * `waveBotSpanDeg`) so one edge of the pinch can run longer than the other
+ * for an organic, staggered silhouette. Outside each edge’s window that
+ * edge is flat; where both are active the ribbon stays roughly constant width.
  */
 export function bandEdgesAt(theta: number, params: WaveEdgeParams): BandEdgeFrame {
   const baseHalf = Math.max(params.bandWidthMm, 0.4) / 2
@@ -236,21 +263,30 @@ export function bandEdgesAt(theta: number, params: WaveEdgeParams): BandEdgeFram
 
   const amp = Math.max(0, params.waveAmplitudeMm)
   const phase = (params.wavePhaseDeg * Math.PI) / 180
-  const spanRad = (Math.min(350, Math.max(20, params.waveSpanDeg)) * Math.PI) / 180
+  const { topDeg, botDeg } = edgeSpanDegs(params)
+  const topSpanRad = (topDeg * Math.PI) / 180
+  const botSpanRad = (botDeg * Math.PI) / 180
   const sharp = clamp01(params.waveSharpness)
 
-  const u = pinchLocalU(theta, phase, spanRad)
-  const mid = u === null ? 0 : amp * pinchCenterline(u, sharp)
+  // Independent local u per edge → one edge can extend past the other
+  const uTop = pinchLocalU(theta, phase, topSpanRad)
+  const uBot = pinchLocalU(theta, phase, botSpanRad)
+  const midTop = uTop === null ? 0 : amp * pinchCenterline(uTop, sharp)
+  const midBot = uBot === null ? 0 : amp * pinchCenterline(uBot, sharp)
 
-  // Constant width ribbon; mid=0 outside the pinch → classic flat band
-  const zTop = mid + baseHalf
-  const zBot = mid - baseHalf
+  const zTop = midTop + baseHalf
+  const zBot = midBot - baseHalf
+  // Guard against inverted edges if spans/shape ever diverge hard
+  const zHi = Math.max(zTop, zBot + 0.2)
+  const zLo = Math.min(zBot, zTop - 0.2)
+  const zMid = (zHi + zLo) / 2
+  const halfW = (zHi - zLo) / 2
   return {
-    zTop,
-    zBot,
-    zMid: mid,
-    halfW: baseHalf,
-    width: baseHalf * 2,
+    zTop: zHi,
+    zBot: zLo,
+    zMid,
+    halfW,
+    width: halfW * 2,
   }
 }
 
@@ -356,13 +392,13 @@ function sampleLocalProfile(
 }
 
 /**
- * Build sorted unique θ samples in [0, 2π], densifying the pinch window and
- * forcing hard corners onto mesh columns.
+ * Build sorted unique θ samples in [0, 2π], densifying both edge pinch windows
+ * and forcing hard corners onto mesh columns.
  */
 function radialThetaSamples(params: RingParams, baseCount: number): number[] {
   const phase = (params.wavePhaseDeg * Math.PI) / 180
-  const spanRad = (Math.min(350, Math.max(20, params.waveSpanDeg)) * Math.PI) / 180
-  const half = spanRad / 2
+  const { topDeg, botDeg, maxDeg } = edgeSpanDegs(params)
+  const spans = [topDeg, botDeg, maxDeg].map((d) => (d * Math.PI) / 180)
 
   const thetas = new Set<number>()
   for (let i = 0; i < baseCount; i++) {
@@ -371,36 +407,37 @@ function radialThetaSamples(params: RingParams, baseCount: number): number[] {
   thetas.add(0)
   thetas.add(Math.PI * 2)
 
-  // Window edges (flat ↔ pinch transitions)
-  for (const edge of [-half, half]) {
-    let θ = phase + edge
-    θ = ((θ % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-    thetas.add(θ)
-  }
-
   // Motif vertices + feature samples + dense edge fades (smooth join to flat)
   const times = new Set<number>(PINCH_FEATURE_US)
   for (const [t] of PINCH_CENTERLINE) {
     if (t > 0 && t < 1) times.add(t)
   }
-  // Extra samples in the boundary fade zones (u near 0 and 1)
   for (let i = 0; i <= 12; i++) {
     times.add((i / 12) * 0.18)
     times.add(1 - (i / 12) * 0.18)
   }
-  for (const u of times) {
-    let θ = phase - half + u * spanRad
-    θ = ((θ % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-    thetas.add(θ)
-  }
 
-  // Dense samples across the whole pinch for a clean freeform surface
-  const pinchSamples = Math.max(48, Math.ceil(baseCount * (spanRad / (Math.PI * 2)) * 3))
-  for (let i = 1; i < pinchSamples; i++) {
-    const u = i / pinchSamples
-    let θ = phase - half + u * spanRad
-    θ = ((θ % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-    thetas.add(θ)
+  for (const spanRad of spans) {
+    const half = spanRad / 2
+    // Window edges (flat ↔ pinch transitions) for each edge length
+    for (const edge of [-half, half]) {
+      let θ = phase + edge
+      θ = ((θ % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+      thetas.add(θ)
+    }
+    for (const u of times) {
+      let θ = phase - half + u * spanRad
+      θ = ((θ % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+      thetas.add(θ)
+    }
+    // Dense samples across the pinch for a clean freeform surface
+    const pinchSamples = Math.max(48, Math.ceil(baseCount * (spanRad / (Math.PI * 2)) * 3))
+    for (let i = 1; i < pinchSamples; i++) {
+      const u = i / pinchSamples
+      let θ = phase - half + u * spanRad
+      θ = ((θ % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+      thetas.add(θ)
+    }
   }
 
   return [...thetas].sort((a, b) => a - b)
@@ -541,4 +578,92 @@ export function outerDomeFrame(
   const nz = s / hw
   const nlen = Math.hypot(nr, nz) || 1
   return { r, ur: nr / nlen, uz: nz / nlen }
+}
+
+/**
+ * Motif u-range of the steep “Z” diagonals of the pinch (crest → trough).
+ * Soft pads at the ends of the window are excluded so measured length matches
+ * the visible hard flanks of the S silhouette.
+ */
+export const PINCH_FLANK_U0 = 0.30
+export const PINCH_FLANK_U1 = 0.72
+
+export interface PinchFlankPath {
+  /** 3D path length along the outer dome edge (mm). */
+  lengthMm: number
+  /** Polyline samples on the outer surface (for dimension drawing). */
+  points: { x: number; y: number; z: number }[]
+  /** Midpoint of the path (label anchor). */
+  mid: { x: number; y: number; z: number }
+}
+
+/**
+ * Point on the outer domed surface at angle θ for a given axial edge z.
+ */
+export function outerEdgePointAt(
+  theta: number,
+  z: number,
+  params: Pick<RingParams, 'innerDiameterMm' | 'bandThicknessMm'>,
+  halfW: number,
+  zMid: number,
+): { x: number; y: number; z: number } {
+  const innerR = params.innerDiameterMm / 2
+  const { r } = outerDomeFrame(z, innerR, params.bandThicknessMm, halfW, zMid)
+  return {
+    x: r * Math.cos(theta),
+    y: r * Math.sin(theta),
+    z,
+  }
+}
+
+/**
+ * 3D path of the steep pinch flank on the upper and lower outer edges.
+ * These are the two parallel diagonals of the S/Z ribbon the user sees.
+ */
+export function measurePinchFlankPaths(params: WaveEdgeParams & Pick<RingParams, 'innerDiameterMm' | 'bandThicknessMm'>): {
+  top: PinchFlankPath
+  bot: PinchFlankPath
+} {
+  const empty = (): PinchFlankPath => ({
+    lengthMm: 0,
+    points: [],
+    mid: { x: 0, y: 0, z: 0 },
+  })
+
+  if (params.bandProfile !== 'wave' || params.waveAmplitudeMm <= 0) {
+    return { top: empty(), bot: empty() }
+  }
+
+  const phase = (params.wavePhaseDeg * Math.PI) / 180
+  const { topDeg, botDeg } = edgeSpanDegs(params)
+
+  const sampleFlank = (spanDeg: number, which: 'top' | 'bot'): PinchFlankPath => {
+    const spanRad = (spanDeg * Math.PI) / 180
+    if (spanRad < 1e-6) return empty()
+    const half = spanRad / 2
+    const n = Math.max(32, Math.ceil(spanDeg * 1.2))
+    const points: { x: number; y: number; z: number }[] = []
+    let length = 0
+
+    for (let i = 0; i <= n; i++) {
+      const u = PINCH_FLANK_U0 + (i / n) * (PINCH_FLANK_U1 - PINCH_FLANK_U0)
+      const θ = phase - half + u * spanRad
+      const e = bandEdgesAt(θ, params)
+      const z = which === 'top' ? e.zTop : e.zBot
+      const p = outerEdgePointAt(θ, z, params, e.halfW, e.zMid)
+      if (points.length > 0) {
+        const prev = points[points.length - 1]!
+        length += Math.hypot(p.x - prev.x, p.y - prev.y, p.z - prev.z)
+      }
+      points.push(p)
+    }
+
+    const mid = points[Math.floor(points.length / 2)] ?? { x: 0, y: 0, z: 0 }
+    return { lengthMm: length, points, mid }
+  }
+
+  return {
+    top: sampleFlank(topDeg, 'top'),
+    bot: sampleFlank(botDeg, 'bot'),
+  }
 }

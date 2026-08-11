@@ -129,18 +129,34 @@
               </div>
               <div class="field">
                 <label>
-                  Pinch width
-                  <span class="value" id="val-wave-span">100°</span>
+                  Upper flank length
+                  <span class="value" id="val-wave-top-span">100° · — mm</span>
                 </label>
                 <input
                   type="range"
-                  id="waveSpanDeg"
+                  id="waveTopSpanDeg"
                   min="40"
                   max="220"
                   step="1"
                   value="100"
                 />
               </div>
+              <div class="field">
+                <label>
+                  Lower flank length
+                  <span class="value" id="val-wave-bot-span">100° · — mm</span>
+                </label>
+                <input
+                  type="range"
+                  id="waveBotSpanDeg"
+                  min="40"
+                  max="220"
+                  step="1"
+                  value="100"
+                />
+              </div>
+              <!-- Derived max span for cache / legacy readers -->
+              <input type="hidden" id="waveSpanDeg" value="100" />
               <div class="field">
                 <label>
                   Corner hardness
@@ -157,7 +173,9 @@
               </div>
               <p class="hint">
                 Pinch sits in one sector only — the rest of the band stays a flat D.
-                Corner hardness only rounds the kink; amplitude and pinch full width stay put.
+                Upper / lower flank length stretch the two parallel diagonals of the S
+                (path length shown in mm on the ring and next to the sliders).
+                Corner hardness only rounds the kink; amplitude stays put.
               </p>
             </div>
             <p class="hint" id="profile-hint">

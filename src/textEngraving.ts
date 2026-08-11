@@ -206,6 +206,8 @@ function textLayoutKey(params: RingParams): string {
     params.waveCount,
     params.wavePhaseDeg,
     params.waveSpanDeg,
+    params.waveTopSpanDeg,
+    params.waveBotSpanDeg,
     params.waveSharpness,
     params.waveAsymmetry,
     params.waveCharacter,
