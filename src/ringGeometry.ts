@@ -36,37 +36,428 @@ function clamp01(t: number): number {
   return Math.min(1, Math.max(0, t))
 }
 
-/** Control point: u ∈ [0,1] within the pinch window, offset ∈ [-1,1]. */
+/** Control point: u ∈ [0,1] within the pinch window, z in millimeters. */
 type MotifPt = readonly [number, number]
 
 /**
- * Localized pinch motif (u = 0…1 only inside the angular span).
+ * The harmonious reference silhouette from the original ring prototype.
  *
- * Zero-slope pads at both ends so the join to the flat band is C1-friendly.
- * Interior is a single S (crest → waist → trough) without extra spikes that
- * Catmull-Rom would overshoot into “bourrelets”.
+ * Keep this topology stable. Controls may scale it and alter the construction
+ * angle, but must not turn the 2 marked flank lengths into extra lobes.
  */
-const PINCH_CENTERLINE: readonly MotifPt[] = [
-  [0.0, 0.0],
-  [0.06, 0.0], // zero-slope pad → flat band
+const REFERENCE_PINCH: readonly MotifPt[] = [
+  [0, 0],
+  [0.06, 0],
   [0.14, 0.06],
   [0.22, 0.22],
   [0.3, 0.5],
   [0.36, 0.78],
-  [0.42, 1.0], // crest
+  [0.42, 1],
   [0.48, 0.55],
   [0.52, 0.05],
   [0.56, -0.4],
-  [0.6, -0.72], // trough
+  [0.6, -0.72],
   [0.68, -0.52],
   [0.78, -0.24],
   [0.88, -0.05],
-  [0.94, 0.0], // zero-slope pad → flat band
-  [1.0, 0.0],
+  [0.94, 0],
+  [1, 0],
 ]
 
-/** Interior feature samples forced onto mesh columns (within the pinch span). */
-const PINCH_FEATURE_US: readonly number[] = [0.06, 0.42, 0.52, 0.6, 0.94]
+const REFERENCE_CREST_U = 0.42
+const REFERENCE_WAIST_U = 0.52
+const REFERENCE_TROUGH_U = 0.6
+/** Physical width of the broader approach shoulder marked on the reference. */
+export const PINCH_SHOULDER_WIDTH_MM = 3.7
+const REFERENCE_SHOULDER_RAMP_IN_U = 0.02
+const REFERENCE_SHOULDER_FULL_START_U = 0.32
+const REFERENCE_SHOULDER_MEASURE_U = 0.35
+/** Hold 3.70 mm to the crest junction, then fillet into the 3.00 mm crest. */
+const REFERENCE_SHOULDER_FULL_END_U = 0.4
+/** The descending `\` stroke begins at the crest and stays nominal throughout. */
+const REFERENCE_SHOULDER_RAMP_OUT_U = REFERENCE_CREST_U
+/** Fixed endpoints of the 2 dimensioned descending edge paths. */
+const REFERENCE_TOP_FLANK_START_U = 0.454
+const REFERENCE_TOP_FLANK_END_U = 0.56573
+const REFERENCE_BOT_FLANK_START_U = 0.4536
+const REFERENCE_BOT_FLANK_END_U = 0.569
+const REFERENCE_EXCURSION_MM = 5.66 - 3.5
+
+export interface PinchLayout {
+  /** Shape-preserving upper-edge knots, with z offsets in millimeters. */
+  topMotif: readonly MotifPt[]
+  /** PCHIP tangents paired with `topMotif`. */
+  topTangents: readonly number[]
+  /** Shape-preserving lower-edge knots. Kept parallel to the upper edge. */
+  botMotif: readonly MotifPt[]
+  /** PCHIP tangents paired with `botMotif`. */
+  botTangents: readonly number[]
+  /** Centerline envelope used by manufacturing/export helpers. */
+  motif: readonly MotifPt[]
+  /** PCHIP tangents paired with `motif`. */
+  tangents: readonly number[]
+  spanRad: number
+  spanDeg: number
+  topStartU: number
+  topEndU: number
+  botStartU: number
+  botEndU: number
+  takeoffU: number
+  crestU: number
+  waistU: number
+  troughU: number
+  landingU: number
+  /** Center of the constant-width 3.70 mm approach shoulder. */
+  shoulderU: number
+  riseMm: number
+  fallMm: number
+  targetWidthMm: number
+  requestedAngleDeg: number
+  effectiveAngleDeg: number
+}
+
+function referenceTangents(points: readonly MotifPt[]): number[] {
+  return points.map((_, i) => {
+    if (i === 0 || i === points.length - 1) return 0
+    const previous = points[i - 1]!
+    const point = points[i]!
+    const next = points[i + 1]!
+    const previousRun = Math.max(point[0] - previous[0], 1e-9)
+    const nextRun = Math.max(next[0] - point[0], 1e-9)
+    const previousSlope = (point[1] - previous[1]) / previousRun
+    const nextSlope = (next[1] - point[1]) / nextRun
+
+    // PCHIP: an extremum or flat segment must have a zero tangent. The former
+    // central difference gave the crest a negative tangent, creating a small
+    // overshoot immediately before its apex.
+    if (
+      Math.abs(previousSlope) < 1e-12 ||
+      Math.abs(nextSlope) < 1e-12 ||
+      previousSlope * nextSlope <= 0
+    ) {
+      return 0
+    }
+
+    const previousWeight = 2 * nextRun + previousRun
+    const nextWeight = nextRun + 2 * previousRun
+    return (
+      (previousWeight + nextWeight) /
+      (previousWeight / previousSlope + nextWeight / nextSlope)
+    )
+  })
+}
+
+function motifExtrema(
+  motif: readonly MotifPt[],
+  tangents: readonly number[],
+  sharpness: number,
+): { min: number; max: number } {
+  let min = Infinity
+  let max = -Infinity
+  const samples = 4096
+  for (let i = 0; i <= samples; i++) {
+    const value = pinchEdgeOffset(i / samples, sharpness, motif, tangents)
+    min = Math.min(min, value)
+    max = Math.max(max, value)
+  }
+  return { min, max }
+}
+
+function isKnotU(u: number, motif: readonly MotifPt[]): boolean {
+  return motif.some(([knotU]) => Math.abs(knotU - u) < 1e-7)
+}
+
+function motifDerivative(
+  u: number,
+  sharpness: number,
+  motif: readonly MotifPt[],
+  tangents: readonly number[],
+): number {
+  const h = 1e-5
+  const u0 = Math.max(0, u - h)
+  const u1 = Math.min(1, u + h)
+  if (u1 <= u0) return 0
+  if (isKnotU(u, motif) && sharpness >= 0.999) {
+    const left =
+      (pinchEdgeOffset(u, sharpness, motif, tangents) -
+        pinchEdgeOffset(u0, sharpness, motif, tangents)) /
+      Math.max(u - u0, 1e-9)
+    const right =
+      (pinchEdgeOffset(u1, sharpness, motif, tangents) -
+        pinchEdgeOffset(u, sharpness, motif, tangents)) /
+      Math.max(u1 - u, 1e-9)
+    return Math.abs(left) <= Math.abs(right) ? left : right
+  }
+  return (
+    (pinchEdgeOffset(u1, sharpness, motif, tangents) -
+      pinchEdgeOffset(u0, sharpness, motif, tangents)) /
+    (u1 - u0)
+  )
+}
+
+/**
+ * Move only the central descending stroke. At 120° this returns the original
+ * knot positions exactly; the shoulders and flat joins stay undisturbed.
+ */
+function angleWarpU(u: number, angleDeg: number): number {
+  const runScale = Math.min(1.45, Math.max(0.65, Math.pow(angleDeg / 120, 1.15)))
+  if (u <= REFERENCE_CREST_U) return u
+
+  const warpedTrough =
+    REFERENCE_CREST_U + (REFERENCE_TROUGH_U - REFERENCE_CREST_U) * runScale
+  if (u <= REFERENCE_TROUGH_U) {
+    return REFERENCE_CREST_U + (u - REFERENCE_CREST_U) * runScale
+  }
+
+  return (
+    warpedTrough +
+    ((u - REFERENCE_TROUGH_U) / (1 - REFERENCE_TROUGH_U)) * (1 - warpedTrough)
+  )
+}
+
+/** Quintic easing with zero first and second derivatives at both ends. */
+function smootherstep01(value: number): number {
+  const t = clamp01(value)
+  return t * t * t * (t * (t * 6 - 15) + 10)
+}
+
+/**
+ * Local physical width of the swept D section. The approach broadens to
+ * 3.70 mm through the shoulder's crest connection. A short C2 junction fillet
+ * resolves that incoming width into the nominal-width crest and descending
+ * stroke. The long blend back to the flat band stays on the approach side.
+ */
+function pinchSectionWidthAtU(
+  u: number,
+  baseWidthMm: number,
+  angleDeg: number,
+): number {
+  const baseWidth = Math.max(baseWidthMm, 0.4)
+  const shoulderWidth = Math.max(baseWidth, PINCH_SHOULDER_WIDTH_MM)
+  if (shoulderWidth <= baseWidth + 1e-9) return baseWidth
+
+  const rampIn = angleWarpU(REFERENCE_SHOULDER_RAMP_IN_U, angleDeg)
+  const fullStart = angleWarpU(REFERENCE_SHOULDER_FULL_START_U, angleDeg)
+  const fullEnd = angleWarpU(REFERENCE_SHOULDER_FULL_END_U, angleDeg)
+  const rampOut = angleWarpU(REFERENCE_SHOULDER_RAMP_OUT_U, angleDeg)
+
+  let blend = 0
+  if (u > rampIn && u < fullStart) {
+    blend = smootherstep01((u - rampIn) / Math.max(fullStart - rampIn, 1e-9))
+  } else if (u >= fullStart && u <= fullEnd) {
+    blend = 1
+  } else if (u > fullEnd && u < rampOut) {
+    blend = 1 - smootherstep01((u - fullEnd) / Math.max(rampOut - fullEnd, 1e-9))
+  }
+
+  return baseWidth + (shoulderWidth - baseWidth) * blend
+}
+
+function emptyPinchLayout(bandWidthMm: number): PinchLayout {
+  const motif: readonly MotifPt[] = [[0, 0], [1, 0]]
+  return {
+    topMotif: motif,
+    topTangents: [0, 0],
+    botMotif: motif,
+    botTangents: [0, 0],
+    motif,
+    tangents: [0, 0],
+    spanRad: 0,
+    spanDeg: 0,
+    topStartU: 0,
+    topEndU: 0,
+    botStartU: 1,
+    botEndU: 1,
+    takeoffU: 0,
+    crestU: 0,
+    waistU: 0.5,
+    troughU: 1,
+    landingU: 1,
+    shoulderU: REFERENCE_SHOULDER_MEASURE_U,
+    riseMm: 0,
+    fallMm: 0,
+    targetWidthMm: bandWidthMm,
+    requestedAngleDeg: 120,
+    effectiveAngleDeg: 120,
+  }
+}
+
+/**
+ * Build the reference's localized S-step in an unwrapped plane.
+ *
+ * A D-section is swept normal to the centerline, so the green and blue edges
+ * remain parallel. Its approach shoulder broadens locally to 3.70 mm without
+ * thinning the steep flanks. The remaining ring returns to its nominal width.
+ */
+function buildPinchLayout(params: WaveEdgeParams): PinchLayout {
+  const bandWidth = Math.max(params.bandWidthMm, 0.4)
+  const targetWidth = Math.max(
+    bandWidth,
+    PINCH_SHOULDER_WIDTH_MM,
+    Math.min(10, params.waveAmplitudeMm || bandWidth),
+  )
+  const nominalExcursion = targetWidth - bandWidth
+  if (params.bandProfile !== 'wave' || nominalExcursion <= 1e-6) {
+    return emptyPinchLayout(bandWidth)
+  }
+
+  const requestedTop = Math.max(params.waveTopFlankMm || 5.2, 0.2)
+  const requestedBot = Math.max(params.waveBotFlankMm || 5, 0.2)
+  const requestedAngle = Math.min(150, Math.max(70, params.wavePinchAngleDeg || 120))
+
+  // Normalize the actual interpolated curve, including angle warp and corner
+  // hardness, so the slider remains an exact edge-to-edge envelope.
+  const unitMotif: readonly MotifPt[] = REFERENCE_PINCH.map(([u, value]) => [
+    angleWarpU(u, requestedAngle),
+    value,
+  ])
+  const sharpness = clamp01(params.waveSharpness)
+  const unitTangents = referenceTangents(unitMotif)
+  const unitExtrema = motifExtrema(unitMotif, unitTangents, sharpness)
+  const unitRange = Math.max(unitExtrema.max - unitExtrema.min, 1e-6)
+  // The sliders define the transition footprint. The readouts are derived
+  // measurements of fixed crest-to-trough edge paths, so changing any other
+  // parameter updates them instead of silently moving their endpoints.
+  const flankMean = (requestedTop + requestedBot) / 2
+  // The reference used a 100° window for a 2.16 mm centerline excursion.
+  // Grow the footprint sub-linearly with larger envelopes so the silhouette
+  // retains the reference slope without swallowing the whole circumference.
+  const spanDeg = Math.min(
+    220,
+    Math.max(
+      45,
+      100 *
+        Math.sqrt(nominalExcursion / REFERENCE_EXCURSION_MM) *
+        (flankMean / 5.1),
+    ),
+  )
+  const spanRad = (spanDeg * Math.PI) / 180
+  const outerRadius = params.innerDiameterMm / 2 + params.bandThicknessMm
+  const axialProjection = (u: number, side: 1 | -1, scale: number): number => {
+    const offset = pinchEdgeOffset(u, sharpness, unitMotif, unitTangents) * scale
+    const dzDu = motifDerivative(u, sharpness, unitMotif, unitTangents) * scale
+    const slope = dzDu / Math.max(outerRadius * spanRad, 1e-6)
+    const normalZ = 1 / Math.hypot(1, slope)
+    const localWidth = pinchSectionWidthAtU(u, bandWidth, requestedAngle)
+    const localHalf = localWidth / 2
+    // Grow the shoulder from its underside. Anchoring the upper edge prevents
+    // the wider incoming section from forming a crown immediately before the
+    // narrower crest.
+    const normalCenterShift = -(localWidth - bandWidth) / 2
+    return offset + (normalCenterShift + side * localHalf) * normalZ
+  }
+  const projectedEnvelope = (scale: number): number => {
+    let maxTop = -Infinity
+    let minBot = Infinity
+    const samples = 2048
+    const sampleUs = new Set(unitMotif.map(([u]) => u))
+    for (let i = 0; i <= samples; i++) sampleUs.add(i / samples)
+    for (const u of sampleUs) {
+      maxTop = Math.max(maxTop, axialProjection(u, 1, scale))
+      minBot = Math.min(minBot, axialProjection(u, -1, scale))
+    }
+    return maxTop - minBot
+  }
+  // Normal-offset sections shorten their axial projection on a slope. Solve
+  // the centerline scale so the generated crest-to-trough envelope, not the
+  // unoffset guide curve, remains exactly equal to the requested full width.
+  let lowScale = 0
+  let highScale = Math.max((nominalExcursion / unitRange) * 2, 1)
+  for (let i = 0; i < 12; i++) {
+    const envelope = projectedEnvelope(highScale)
+    if (envelope >= targetWidth) break
+    highScale *= 2
+  }
+  for (let i = 0; i < 48; i++) {
+    const scale = (lowScale + highScale) / 2
+    const envelope = projectedEnvelope(scale)
+    if (envelope < targetWidth) lowScale = scale
+    else highScale = scale
+  }
+  const scale = (lowScale + highScale) / 2
+  const centerMotif: readonly MotifPt[] = unitMotif.map(([u, value]) => [u, value * scale])
+  const tangents = referenceTangents(centerMotif)
+  const rise = unitExtrema.max * scale
+  const fall = -unitExtrema.min * scale
+  const meanFlank = Math.max(flankMean, 1e-6)
+  const topScale = requestedTop / meanFlank
+  const botScale = requestedBot / meanFlank
+  const fixedTopStartU = angleWarpU(REFERENCE_TOP_FLANK_START_U, requestedAngle)
+  const fixedTopEndU = angleWarpU(REFERENCE_TOP_FLANK_END_U, requestedAngle)
+  const fixedBotStartU = angleWarpU(REFERENCE_BOT_FLANK_START_U, requestedAngle)
+  const fixedBotEndU = angleWarpU(REFERENCE_BOT_FLANK_END_U, requestedAngle)
+  const topStartU = fixedTopStartU
+  const topEndU = Math.min(
+    1,
+    topStartU + (fixedTopEndU - fixedTopStartU) * topScale,
+  )
+  const botEndU = fixedBotEndU
+  const botStartU = Math.max(
+    0,
+    botEndU - (fixedBotEndU - fixedBotStartU) * botScale,
+  )
+  const takeoffU = angleWarpU(0.06, requestedAngle)
+  const crestU = angleWarpU(REFERENCE_CREST_U, requestedAngle)
+  const waistU = angleWarpU(REFERENCE_WAIST_U, requestedAngle)
+  const troughU = angleWarpU(REFERENCE_TROUGH_U, requestedAngle)
+  const landingU = angleWarpU(0.94, requestedAngle)
+  const shoulderU = angleWarpU(REFERENCE_SHOULDER_MEASURE_U, requestedAngle)
+  const topMotif = centerMotif
+  const botMotif = centerMotif
+  return {
+    topMotif,
+    topTangents: tangents,
+    botMotif,
+    botTangents: tangents,
+    motif: centerMotif,
+    tangents,
+    spanRad,
+    spanDeg,
+    topStartU,
+    topEndU,
+    botStartU,
+    botEndU,
+    takeoffU,
+    crestU,
+    waistU,
+    troughU,
+    landingU,
+    shoulderU,
+    riseMm: rise,
+    fallMm: fall,
+    targetWidthMm: targetWidth,
+    requestedAngleDeg: requestedAngle,
+    effectiveAngleDeg: requestedAngle,
+  }
+}
+
+let pinchLayoutCacheKey = ''
+let pinchLayoutCache = emptyPinchLayout(3)
+
+/** Memoized because mesh generation evaluates the edge frame for every column. */
+export function pinchLayoutFromParams(params: WaveEdgeParams): PinchLayout {
+  const key = [
+    params.bandProfile,
+    params.innerDiameterMm,
+    params.bandWidthMm,
+    params.waveAmplitudeMm,
+    params.waveTopFlankMm,
+    params.waveBotFlankMm,
+    params.wavePinchAngleDeg,
+    params.waveSharpness,
+  ].join('|')
+  if (key !== pinchLayoutCacheKey) {
+    pinchLayoutCache = buildPinchLayout(params)
+    pinchLayoutCacheKey = key
+  }
+  return pinchLayoutCache
+}
+
+/** Absolute ring angle for one normalized pinch landmark. */
+export function pinchThetaAtU(phaseDeg: number, spanRad: number, u: number): number {
+  const phase = (phaseDeg * Math.PI) / 180
+  return phase - spanRad / 2 + clamp01(u) * spanRad
+}
 
 /** Piecewise-linear sample on a non-periodic [0,1] path (open motif). */
 function evalPolylineOpen(u: number, pts: readonly MotifPt[]): number {
@@ -85,12 +476,8 @@ function evalPolylineOpen(u: number, pts: readonly MotifPt[]): number {
   return pts[pts.length - 1]![1]
 }
 
-/**
- * Cubic Hermite between control points with finite-difference tangents,
- * **clamped to zero at the ends** so the pinch joins the flat band with no kink.
- * Tension in [0,1]: 1 = almost polyline (short tangents), 0 = fuller smooth S.
- */
-function evalHermiteOpen(u: number, pts: readonly MotifPt[], tension: number): number {
+/** Shape-preserving cubic interpolation through the physical construction knots. */
+function evalHermiteOpen(u: number, pts: readonly MotifPt[], tangents: readonly number[]): number {
   const t = Math.min(1, Math.max(0, u))
   const n = pts.length
   if (n < 2) return pts[0]?.[1] ?? 0
@@ -114,22 +501,10 @@ function evalHermiteOpen(u: number, pts: readonly MotifPt[], tension: number): n
   const s2 = s * s
   const s3 = s2 * s
 
-  // Finite-difference tangents in value/parameter space, scaled by segment length
-  const yPrev = pts[Math.max(0, i - 1)]![1]
   const y1 = p1[1]
   const y2 = p2[1]
-  const yNext = pts[Math.min(n - 1, i + 2)]![1]
-  const tPrev = pts[Math.max(0, i - 1)]![0]
-  const tNext = pts[Math.min(n - 1, i + 2)]![0]
-
-  // Cardinal-style tangents; tension shortens them (harder corners)
-  const taut = 1 - clamp01(tension) * 0.85
-  let m1 = taut * ((y2 - yPrev) / Math.max(t2 - tPrev, 1e-12)) * dt
-  let m2 = taut * ((yNext - y1) / Math.max(tNext - t1, 1e-12)) * dt
-
-  // Force zero end tangents on first/last segments (C1 match to flat band)
-  if (i === 0) m1 = 0
-  if (i >= n - 2) m2 = 0
+  const m1 = (tangents[i] ?? 0) * dt
+  const m2 = (tangents[i + 1] ?? 0) * dt
 
   // Hermite basis
   const h00 = 2 * s3 - 3 * s2 + 1
@@ -139,52 +514,35 @@ function evalHermiteOpen(u: number, pts: readonly MotifPt[], tension: number): n
   return h00 * y1 + h10 * m1 + h01 * y2 + h11 * m2
 }
 
-/**
- * C² fade at the pinch window edges (0 at ends, 1 on the interior plateau).
- * Kills derivative jumps where the flat band meets the pinch — main source of
- * “bourrelet” ridges — without shrinking crest/trough in the middle.
- */
-function boundaryEnvelope(u: number, fade = 0.16): number {
-  const t = Math.min(1, Math.max(0, u))
-  const f = Math.min(Math.max(fade, 0.04), 0.35)
-  const smoother = (x: number): number => {
-    // Ken Perlin’s smootherstep: 6x⁵ − 15x⁴ + 10x³
-    const s = Math.min(1, Math.max(0, x))
-    return s * s * s * (s * (s * 6 - 15) + 10)
-  }
-  if (t < f) return smoother(t / f)
-  if (t > 1 - f) return smoother((1 - t) / f)
+/** C2 join to the untouched flat band, retained from the reference renderer. */
+function pinchBoundaryEnvelope(u: number, fade = 0.16): number {
+  const t = clamp01(u)
+  if (t < fade) return smootherstep01(t / fade)
+  if (t > 1 - fade) return smootherstep01((1 - t) / fade)
   return 1
 }
 
-/**
- * Pinch centerline offset for local u ∈ [0,1].
- *
- * `sharpness` 1 = hard polyline interior; 0 = smooth Hermite through the same
- * peaks. Boundary envelope always blends into the flat band (no edge bourrelet).
- * Crest/trough control values stay at ±1 so amplitude / full width hold.
- */
-function pinchCenterline(u: number, sharpness: number): number {
+/** Edge offset in millimeters. Every hardness passes through the construction knots. */
+function pinchEdgeOffset(
+  u: number,
+  sharpness: number,
+  motif: readonly MotifPt[],
+  tangents: readonly number[],
+): number {
   const sharp = clamp01(sharpness)
-  const hard = evalPolylineOpen(u, PINCH_CENTERLINE)
-  // tension high when sharp → short tangents ≈ polyline; low when soft
-  const soft = evalHermiteOpen(u, PINCH_CENTERLINE, sharp)
-  const shape = sharp >= 0.999 ? hard : sharp <= 0.001 ? soft : soft + (hard - soft) * sharp
-  return shape * boundaryEnvelope(u)
+  const hard = evalPolylineOpen(u, motif)
+  const soft = evalHermiteOpen(u, motif, tangents)
+  return (soft + (hard - soft) * sharp) * pinchBoundaryEnvelope(u)
 }
 
-/**
- * Map ring angle θ to local pinch coordinate u ∈ [0,1], or null if outside span.
- * Window is centered on `phase`, width = `spanRad`.
- */
+/** Map θ to local pinch coordinate u, or null on the untouched flat band. */
 function pinchLocalU(theta: number, phase: number, spanRad: number): number | null {
   if (spanRad <= 1e-6) return null
-  // Signed shortest angular delta from window center
-  let d = theta - phase
-  d = ((d + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI
+  let delta = theta - phase
+  delta = ((delta + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI
   const half = spanRad / 2
-  if (Math.abs(d) > half) return null
-  return (d + half) / spanRad
+  if (Math.abs(delta) > half) return null
+  return (delta + half) / spanRad
 }
 
 export interface BandEdgeFrame {
@@ -198,10 +556,17 @@ export interface BandEdgeFrame {
   halfW: number
   /** Full local axial width */
   width: number
+  /** Translation of the D-section midpoint along the local section normal. */
+  normalCenterShift: number
+  /** Unit normal to the centerline in the unwrapped circumferential/axial plane. */
+  normalS: number
+  normalZ: number
 }
 
 export type WaveEdgeParams = Pick<
   RingParams,
+  | 'innerDiameterMm'
+  | 'bandThicknessMm'
   | 'bandWidthMm'
   | 'bandProfile'
   | 'waveAmplitudeMm'
@@ -210,43 +575,35 @@ export type WaveEdgeParams = Pick<
   | 'waveSpanDeg'
   | 'waveTopSpanDeg'
   | 'waveBotSpanDeg'
+  | 'waveTopFlankMm'
+  | 'waveBotFlankMm'
+  | 'wavePinchAngleDeg'
   | 'waveSharpness'
   | 'waveAsymmetry'
   | 'waveCharacter'
 >
 
-/** Clamp an edge span (degrees) to a safe manufacturing range. */
-function clampSpanDeg(deg: number): number {
-  return Math.min(350, Math.max(20, deg))
-}
-
 /**
- * Effective upper/lower pinch spans (degrees).
- * Falls back to `waveSpanDeg` when a dedicated edge length is missing/zero
- * so older param blobs still build a valid ring.
+ * Derived pinch span. Both band edges share one physical centerline window;
+ * legacy top/bottom span fields no longer distort the requested flank lengths.
  */
-export function edgeSpanDegs(params: Pick<WaveEdgeParams, 'waveSpanDeg' | 'waveTopSpanDeg' | 'waveBotSpanDeg'>): {
+export function edgeSpanDegs(params: WaveEdgeParams): {
   topDeg: number
   botDeg: number
   maxDeg: number
 } {
-  const fallback = clampSpanDeg(params.waveSpanDeg || 100)
-  const topRaw = params.waveTopSpanDeg > 0 ? params.waveTopSpanDeg : fallback
-  const botRaw = params.waveBotSpanDeg > 0 ? params.waveBotSpanDeg : fallback
-  const topDeg = clampSpanDeg(topRaw)
-  const botDeg = clampSpanDeg(botRaw)
-  return { topDeg, botDeg, maxDeg: Math.max(topDeg, botDeg) }
+  const spanDeg = pinchLayoutFromParams(params).spanDeg
+  return { topDeg: spanDeg, botDeg: spanDeg, maxDeg: spanDeg }
 }
 
 /**
  * Local upper/lower edges at angle θ (radians).
  * Classic D profile returns constant ±bandWidth/2.
  *
- * Wave profile: **localized pinch** around `wavePhaseDeg`. Upper and lower
- * edges may occupy different angular lengths (`waveTopSpanDeg` /
- * `waveBotSpanDeg`) so one edge of the pinch can run longer than the other
- * for an organic, staggered silhouette. Outside each edge’s window that
- * edge is flat; where both are active the ribbon stays roughly constant width.
+ * Wave profile: one localized S-step around `wavePhaseDeg`. The returned axial
+ * endpoints are projections of a section held normal to the centerline. Its
+ * marked approach shoulder broadens smoothly while every point outside the
+ * window returns to the original band width and plane.
  */
 export function bandEdgesAt(theta: number, params: WaveEdgeParams): BandEdgeFrame {
   const baseHalf = Math.max(params.bandWidthMm, 0.4) / 2
@@ -258,61 +615,77 @@ export function bandEdgesAt(theta: number, params: WaveEdgeParams): BandEdgeFram
       zMid: 0,
       halfW: baseHalf,
       width: baseHalf * 2,
+      normalCenterShift: 0,
+      normalS: 0,
+      normalZ: 1,
     }
   }
 
-  const amp = Math.max(0, params.waveAmplitudeMm)
   const phase = (params.wavePhaseDeg * Math.PI) / 180
-  const { topDeg, botDeg } = edgeSpanDegs(params)
-  const topSpanRad = (topDeg * Math.PI) / 180
-  const botSpanRad = (botDeg * Math.PI) / 180
-  const sharp = clamp01(params.waveSharpness)
-
-  // Independent local u per edge → one edge can extend past the other
-  const uTop = pinchLocalU(theta, phase, topSpanRad)
-  const uBot = pinchLocalU(theta, phase, botSpanRad)
-  const midTop = uTop === null ? 0 : amp * pinchCenterline(uTop, sharp)
-  const midBot = uBot === null ? 0 : amp * pinchCenterline(uBot, sharp)
-
-  const zTop = midTop + baseHalf
-  const zBot = midBot - baseHalf
-  // Guard against inverted edges if spans/shape ever diverge hard
-  const zHi = Math.max(zTop, zBot + 0.2)
-  const zLo = Math.min(zBot, zTop - 0.2)
-  const zMid = (zHi + zLo) / 2
-  const halfW = (zHi - zLo) / 2
+  const layout = pinchLayoutFromParams(params)
+  const u = pinchLocalU(theta, phase, layout.spanRad)
+  if (u === null) {
+    return {
+      zTop: baseHalf,
+      zBot: -baseHalf,
+      zMid: 0,
+      halfW: baseHalf,
+      width: baseHalf * 2,
+      normalCenterShift: 0,
+      normalS: 0,
+      normalZ: 1,
+    }
+  }
+  const offset = pinchEdgeOffset(
+    u,
+    clamp01(params.waveSharpness),
+    layout.motif,
+    layout.tangents,
+  )
+  const outerRadius = params.innerDiameterMm / 2 + params.bandThicknessMm
+  const dzDu = motifDerivative(
+    u,
+    clamp01(params.waveSharpness),
+    layout.motif,
+    layout.tangents,
+  )
+  const dsDu = Math.max(outerRadius * layout.spanRad, 1e-6)
+  const slope = dzDu / dsDu
+  const normalLength = Math.hypot(1, slope)
+  const normalS = -slope / normalLength
+  const normalZ = 1 / normalLength
+  const localWidth = pinchSectionWidthAtU(u, baseHalf * 2, layout.requestedAngleDeg)
+  const localHalf = localWidth / 2
+  // Keep the upper silhouette tied to the nominal 3 mm section. Any shoulder
+  // growth moves toward the underside, so the 3.70→3.00 mm crest junction
+  // cannot create a top-edge crown or notch.
+  const normalCenterShift = -(localWidth - baseHalf * 2) / 2
+  const zMid = offset + normalCenterShift * normalZ
+  const zTop = offset + (normalCenterShift + localHalf) * normalZ
+  const zBot = offset + (normalCenterShift - localHalf) * normalZ
   return {
-    zTop: zHi,
-    zBot: zLo,
+    zTop,
+    zBot,
     zMid,
-    halfW,
-    width: halfW * 2,
+    halfW: localHalf,
+    width: localWidth,
+    normalCenterShift,
+    normalS,
+    normalZ,
   }
 }
 
 /** Minimum axial width around the full ring (for text sizing). */
 export function minBandWidthMm(params: WaveEdgeParams): number {
-  if (params.bandProfile !== 'wave') return params.bandWidthMm
-  let minW = Infinity
-  const samples = 72
-  for (let i = 0; i < samples; i++) {
-    const θ = (i / samples) * Math.PI * 2
-    minW = Math.min(minW, bandEdgesAt(θ, params).width)
-  }
-  return minW
+  return Math.max(params.bandWidthMm, 0.4)
 }
 
 /** Maximum |z| extent around the ring (for engraving skip bounds). */
 export function maxBandHalfExtentMm(params: WaveEdgeParams): number {
   if (params.bandProfile !== 'wave') return params.bandWidthMm / 2
-  let maxAbs = 0
-  const samples = 72
-  for (let i = 0; i < samples; i++) {
-    const θ = (i / samples) * Math.PI * 2
-    const e = bandEdgesAt(θ, params)
-    maxAbs = Math.max(maxAbs, Math.abs(e.zTop), Math.abs(e.zBot))
-  }
-  return maxAbs
+  const layout = pinchLayoutFromParams(params)
+  const widestHalf = Math.max(params.bandWidthMm, PINCH_SHOULDER_WIDTH_MM, 0.4) / 2
+  return widestHalf + Math.max(layout.riseMm, layout.fallMm)
 }
 
 /**
@@ -360,9 +733,7 @@ function buildDomedProfile(
 }
 
 /**
- * Sample the local D-profile (meridional plane) at one θ.
- * Topology (point count) is fixed by `arcSteps` + `wallSteps` so every
- * circumferential column can share the same index buffer.
+ * Sample the local D-profile (meridional plane) at one ring angle.
  */
 function sampleLocalProfile(
   innerR: number,
@@ -370,22 +741,30 @@ function sampleLocalProfile(
   edges: BandEdgeFrame,
   arcSteps: number,
   wallSteps: number,
-): { r: number; z: number }[] {
-  const { zTop, zBot, zMid, halfW } = edges
-  const pts: { r: number; z: number }[] = []
+): { r: number; angleOffset: number; z: number }[] {
+  const { zMid, halfW, normalCenterShift, normalS, normalZ } = edges
+  const pts: { r: number; angleOffset: number; z: number }[] = []
 
   for (let i = 0; i <= arcSteps; i++) {
     const t = i / arcSteps
     const ang = -Math.PI / 2 + t * Math.PI
+    const localQ = halfW * Math.sin(ang)
+    const worldQ = normalCenterShift + localQ
     const r = Math.max(innerR + thickness * Math.cos(ang), 1e-4)
-    // Map semi-ellipse from zBot → zTop through zMid
-    const z = zMid + halfW * Math.sin(ang)
-    pts.push({ r, z })
+    const angleOffset = Math.asin(
+      Math.max(-0.999, Math.min(0.999, (worldQ * normalS) / r)),
+    )
+    pts.push({ r, angleOffset, z: zMid + localQ * normalZ })
   }
 
   for (let i = 1; i <= wallSteps; i++) {
     const t = i / wallSteps
-    pts.push({ r: innerR, z: zTop - t * (zTop - zBot) })
+    const localQ = halfW * (1 - 2 * t)
+    const worldQ = normalCenterShift + localQ
+    const angleOffset = Math.asin(
+      Math.max(-0.999, Math.min(0.999, (worldQ * normalS) / innerR)),
+    )
+    pts.push({ r: innerR, angleOffset, z: zMid + localQ * normalZ })
   }
 
   return pts
@@ -397,8 +776,8 @@ function sampleLocalProfile(
  */
 function radialThetaSamples(params: RingParams, baseCount: number): number[] {
   const phase = (params.wavePhaseDeg * Math.PI) / 180
-  const { topDeg, botDeg, maxDeg } = edgeSpanDegs(params)
-  const spans = [topDeg, botDeg, maxDeg].map((d) => (d * Math.PI) / 180)
+  const layout = pinchLayoutFromParams(params)
+  const spanRad = layout.spanRad
 
   const thetas = new Set<number>()
   for (let i = 0; i < baseCount; i++) {
@@ -407,45 +786,30 @@ function radialThetaSamples(params: RingParams, baseCount: number): number[] {
   thetas.add(0)
   thetas.add(Math.PI * 2)
 
-  // Motif vertices + feature samples + dense edge fades (smooth join to flat)
-  const times = new Set<number>(PINCH_FEATURE_US)
-  for (const [t] of PINCH_CENTERLINE) {
-    if (t > 0 && t < 1) times.add(t)
-  }
-  for (let i = 0; i <= 12; i++) {
-    times.add((i / 12) * 0.18)
-    times.add(1 - (i / 12) * 0.18)
-  }
+  if (spanRad <= 1e-6) return [...thetas].sort((a, b) => a - b)
 
-  for (const spanRad of spans) {
-    const half = spanRad / 2
-    // Window edges (flat ↔ pinch transitions) for each edge length
-    for (const edge of [-half, half]) {
-      let θ = phase + edge
-      θ = ((θ % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-      thetas.add(θ)
-    }
-    for (const u of times) {
-      let θ = phase - half + u * spanRad
-      θ = ((θ % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-      thetas.add(θ)
-    }
-    // Dense samples across the pinch for a clean freeform surface
-    const pinchSamples = Math.max(48, Math.ceil(baseCount * (spanRad / (Math.PI * 2)) * 3))
-    for (let i = 1; i < pinchSamples; i++) {
-      const u = i / pinchSamples
-      let θ = phase - half + u * spanRad
-      θ = ((θ % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-      thetas.add(θ)
-    }
+  const addTheta = (raw: number): void => {
+    const θ = ((raw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+    thetas.add(θ)
+  }
+  const half = spanRad / 2
+  addTheta(phase - half)
+  addTheta(phase + half)
+  for (const motif of [layout.topMotif, layout.botMotif]) {
+    for (const [u] of motif) addTheta(phase - half + u * spanRad)
+  }
+  // Extra density around the physical path keeps both short steps free of facets.
+  const pinchSamples = Math.max(64, Math.ceil(baseCount * (spanRad / (Math.PI * 2)) * 3))
+  for (let i = 1; i < pinchSamples; i++) {
+    addTheta(phase - half + (i / pinchSamples) * spanRad)
   }
 
   return [...thetas].sort((a, b) => a - b)
 }
 
 /**
- * Sculpted wave-silhouette ring: circular finger bore, D radial section,
- * axial edges that follow the draft-inspired hard-corner motif around θ.
+ * Sculpted wave-silhouette ring: a D section swept along the localized S while
+ * its axial axis follows the centerline normal. This prevents flank thinning.
  */
 function createWaveRingGeometry(params: RingParams): THREE.BufferGeometry {
   const innerR = params.innerDiameterMm / 2
@@ -482,14 +846,13 @@ function createWaveRingGeometry(params: RingParams): THREE.BufferGeometry {
     const t = θ / (Math.PI * 2)
     const edges = bandEdgesAt(θ, params)
     const profile = sampleLocalProfile(innerR, thickness, edges, arcSteps, wallSteps)
-    const cos = Math.cos(θ)
-    const sin = Math.sin(θ)
 
     for (let j = 0; j < profileCount; j++) {
       const p = profile[j]!
       const idx = (i * profileCount + j) * 3
-      positions[idx] = p.r * cos
-      positions[idx + 1] = p.r * sin
+      const pointAngle = θ + p.angleOffset
+      positions[idx] = p.r * Math.cos(pointAngle)
+      positions[idx + 1] = p.r * Math.sin(pointAngle)
       positions[idx + 2] = p.z
       const uvi = (i * profileCount + j) * 2
       uvs[uvi] = t
@@ -580,14 +943,6 @@ export function outerDomeFrame(
   return { r, ur: nr / nlen, uz: nz / nlen }
 }
 
-/**
- * Motif u-range of the steep “Z” diagonals of the pinch (crest → trough).
- * Soft pads at the ends of the window are excluded so measured length matches
- * the visible hard flanks of the S silhouette.
- */
-export const PINCH_FLANK_U0 = 0.30
-export const PINCH_FLANK_U1 = 0.72
-
 export interface PinchFlankPath {
   /** 3D path length along the outer dome edge (mm). */
   lengthMm: number
@@ -617,8 +972,9 @@ export function outerEdgePointAt(
 }
 
 /**
- * 3D path of the steep pinch flank on the upper and lower outer edges.
- * These are the two parallel diagonals of the S/Z ribbon the user sees.
+ * 3D paths of the green and blue construction marks on the steep descending
+ * stroke. Their solved endpoints and reported values come from the same metal
+ * trajectories used to build the mesh.
  */
 export function measurePinchFlankPaths(params: WaveEdgeParams & Pick<RingParams, 'innerDiameterMm' | 'bandThicknessMm'>): {
   top: PinchFlankPath
@@ -634,26 +990,43 @@ export function measurePinchFlankPaths(params: WaveEdgeParams & Pick<RingParams,
     return { top: empty(), bot: empty() }
   }
 
-  const phase = (params.wavePhaseDeg * Math.PI) / 180
-  const { topDeg, botDeg } = edgeSpanDegs(params)
+  const layout = pinchLayoutFromParams(params)
+  if (layout.spanRad < 1e-6) return { top: empty(), bot: empty() }
 
-  const sampleFlank = (spanDeg: number, which: 'top' | 'bot'): PinchFlankPath => {
-    const spanRad = (spanDeg * Math.PI) / 180
-    if (spanRad < 1e-6) return empty()
-    const half = spanRad / 2
-    const n = Math.max(32, Math.ceil(spanDeg * 1.2))
+  const sampleFlank = (
+    which: 'top' | 'bot',
+    u0: number,
+    u1: number,
+  ): PinchFlankPath => {
+    const segmentDeg = layout.spanDeg * Math.max(0, u1 - u0)
+    const n = Math.max(160, Math.ceil(segmentDeg * 4))
     const points: { x: number; y: number; z: number }[] = []
+    const outerRadius = params.innerDiameterMm / 2 + params.bandThicknessMm
     let length = 0
 
     for (let i = 0; i <= n; i++) {
-      const u = PINCH_FLANK_U0 + (i / n) * (PINCH_FLANK_U1 - PINCH_FLANK_U0)
-      const θ = phase - half + u * spanRad
-      const e = bandEdgesAt(θ, params)
-      const z = which === 'top' ? e.zTop : e.zBot
-      const p = outerEdgePointAt(θ, z, params, e.halfW, e.zMid)
-      if (points.length > 0) {
-        const prev = points[points.length - 1]!
-        length += Math.hypot(p.x - prev.x, p.y - prev.y, p.z - prev.z)
+      const u = u0 + (i / n) * (u1 - u0)
+      const θ = pinchThetaAtU(params.wavePhaseDeg, layout.spanRad, u)
+      const edge = bandEdgesAt(θ, params)
+      const side = which === 'top' ? 1 : -1
+      const z = which === 'top' ? edge.zTop : edge.zBot
+      // Match the actual normal-offset edge used by the mesh. The radial part
+      // of the offset is essential on steep flanks.
+      const edgeQ = edge.normalCenterShift + side * edge.halfW
+      const angleOffset = Math.asin(
+        Math.max(
+          -0.999,
+          Math.min(0.999, (edgeQ * edge.normalS) / outerRadius),
+        ),
+      )
+      const p = {
+        x: outerRadius * Math.cos(θ + angleOffset),
+        y: outerRadius * Math.sin(θ + angleOffset),
+        z,
+      }
+      const previous = points[points.length - 1]
+      if (previous) {
+        length += Math.hypot(p.x - previous.x, p.y - previous.y, p.z - previous.z)
       }
       points.push(p)
     }
@@ -663,7 +1036,7 @@ export function measurePinchFlankPaths(params: WaveEdgeParams & Pick<RingParams,
   }
 
   return {
-    top: sampleFlank(topDeg, 'top'),
-    bot: sampleFlank(botDeg, 'bot'),
+    top: sampleFlank('top', layout.topStartU, layout.topEndU),
+    bot: sampleFlank('bot', layout.botStartU, layout.botEndU),
   }
 }

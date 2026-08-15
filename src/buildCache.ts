@@ -9,7 +9,7 @@ const bandCache = new Map<string, THREE.BufferGeometry>()
 const bandOrder: string[] = []
 
 /** Bump when lathe solid winding / topology / wave silhouette changes. */
-const BAND_CACHE_VERSION = 8
+const BAND_CACHE_VERSION = 9
 
 function bandKey(params: RingParams): string {
   // Round lightly so tiny float noise from number inputs doesn't thrash cache
@@ -21,10 +21,11 @@ function bandKey(params: RingParams): string {
   }
   const amp = Math.round(params.waveAmplitudeMm * 100) / 100
   const phase = Math.round(params.wavePhaseDeg * 10) / 10
-  const top = Math.round(params.waveTopSpanDeg * 10) / 10
-  const bot = Math.round(params.waveBotSpanDeg * 10) / 10
+  const top = Math.round(params.waveTopFlankMm * 100) / 100
+  const bot = Math.round(params.waveBotFlankMm * 100) / 100
+  const angle = Math.round(params.wavePinchAngleDeg * 10) / 10
   const sharp = Math.round(params.waveSharpness * 100) / 100
-  return `v${BAND_CACHE_VERSION}|wave|${params.quality}|${d}|${w}|${t}|${amp}|${phase}|${top}|${bot}|${sharp}`
+  return `v${BAND_CACHE_VERSION}|wave|${params.quality}|${d}|${w}|${t}|${amp}|${phase}|${top}|${bot}|${angle}|${sharp}`
 }
 
 /**

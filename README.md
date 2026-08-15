@@ -12,10 +12,10 @@ Client-side only. Designs stay on your machine unless you host the static build 
 
 ## Features
 
-- **Domed (D-profile) band:** inner diameter (US size chips), width, thickness
-- **Inner + outer text:** Latin fields; optional Tecendil Annatar key overrides for exact tengwar
-- **Inner date stamp:** Inter digits, opposite the primary inscription
-- **Live preview:** orbit / zoom / pan, metal finishes, cutaway, ink fill, lighting presets
+- **D-profile or localized wave band:** inner diameter, width, thickness, physical pinch width, flanks, and angle
+- **Inner + outer text:** Latin fields; optional Tecendil Annatar key overrides for exact Tengwar
+- **Independent inscription placement:** D-profile inner text, outer text, and Latin date position controls
+- **Live preview:** 6-axis arcball / zoom / pan, metal finishes, cutaway, ink fill, and lighting presets
 - **18k gold estimate:** rough mass / melt value from volume + spot price
 - **STL export:** binary, mm units, solid band with recessed engraving
 
@@ -42,10 +42,10 @@ Open **http://127.0.0.1:5173** (see the terminal if the port differs).
 
 ## Using the studio
 
-1. Pick **ring size** (or type diameter / width / thickness).
+1. Pick the **band silhouette** and ring size (or type diameter / width / thickness).
 2. Enter **inner / outer Latin text** for reference or Latin faces.
 3. For Tengwar Annatar: paste **Tecendil → Font: Annatar** key strings under **Advanced · Tecendil Annatar encoding**.
-4. Set **date**, depth, sizes, metal, and **mesh quality** (use **High** or **Extra** before final export).
+4. Set inscription positions, **date**, depth, sizes, metal, and **mesh quality** (use **High** or **Extra** before final export).
 5. Turn **cutaway off** for manufacturing STLs.
 6. **Export STL** and send to your printer / casting service.
 
@@ -66,12 +66,13 @@ wedding-ring-stl/
 ├── src/
 │   ├── main.ts             # Controls, rebuild pipeline
 │   ├── buildRing.ts        # Band + inscriptions assembly
-│   ├── ringGeometry.ts     # Lathe D-profile
+│   ├── ringGeometry.ts     # D-profile and localized wave geometry
 │   ├── textEngraving.ts    # Layout, bend, displacement carve
 │   ├── exportStl.ts        # Binary STL writer
 │   ├── goldEstimate.ts     # Volume / 18k estimate
 │   └── types.ts            # RingParams + defaults
 ├── scripts/
+│   ├── test-pinch-s.mts
 │   └── test-build-modes.mts
 ├── LICENSE                 # MIT (application source)
 ├── THIRD_PARTY_NOTICES.md  # Fonts & dependencies

@@ -18,8 +18,9 @@ export interface RingParams {
    */
   bandProfile: BandProfile
   /**
-   * Peak axial excursion of the localized pinch (mm).
-   * 0 → classic constant-width D. Typical range 0.6–1.6 mm.
+   * Target full axial pinch width in millimeters, measured from the highest
+   * upper edge to the lowest lower edge. The UI caps this at 10 mm.
+   * Values at or below `bandWidthMm` produce a flat D band.
    */
   waveAmplitudeMm: number
   /**
@@ -29,21 +30,24 @@ export interface RingParams {
   /** Angular center of the pinch around the finger (degrees). */
   wavePhaseDeg: number
   /**
-   * How much of the circumference the pinch occupies (degrees).
-   * Derived as max(upper, lower) edge length for densification / overlays.
-   * Prefer `waveTopSpanDeg` / `waveBotSpanDeg` for independent edge control.
+   * Legacy/cache field. The current localized window is derived from the
+   * physical flank paths and the ring radius.
    */
   waveSpanDeg: number
   /**
-   * Angular length of the **upper** edge pinch (degrees along the band).
-   * Rest of that edge stays flat. Typical 40–180°.
+   * Legacy/cache field kept for compatible parameter payloads.
    */
   waveTopSpanDeg: number
   /**
-   * Angular length of the **lower** edge pinch (degrees along the band).
-   * Make this differ from the upper length for an organic, staggered silhouette.
+   * Legacy/cache field kept for compatible parameter payloads.
    */
   waveBotSpanDeg: number
+  /** Upper transition reach, calibrated to a 5.20 mm default edge path. */
+  waveTopFlankMm: number
+  /** Lower transition reach, calibrated to a 5.00 mm default edge path. */
+  waveBotFlankMm: number
+  /** Construction angle displayed at the red lower pinch corner, in degrees. */
+  wavePinchAngleDeg: number
   /**
    * Corner hardness of the pinch motif only (does not change amplitude).
    * 1 = sharp polyline breaks; 0 = smooth spline through the same peaks —
@@ -70,8 +74,12 @@ export interface RingParams {
   textSizeMm: number
   /** Font size of the Latin date (defaults slightly smaller if 0 → auto) */
   dateTextSizeMm: number
-  /** Angular offset of the primary inscription (degrees); date is +180° */
+  /** Angular position shared by wave-band text; outer-text position on D bands */
   textAngleDeg: number
+  /** Independent angular position of the inner inscription on D-shaped bands */
+  innerTextAngleDeg: number
+  /** Independent angular position of the inner date inscription (degrees) */
+  dateAngleDeg: number
   /** Font key for primary / outer text - Tengwar Annatar + fallbacks */
   font: 'tengwar-annatar' | 'tengwar-annatar-italic' | 'ring-inscription' | 'elvish-uncial' | 'cinzel'
   /**
@@ -95,16 +103,19 @@ export interface RingParams {
 
 export const DEFAULT_PARAMS: RingParams = {
   innerDiameterMm: 17.3,
-  bandWidthMm: 3.5,
+  bandWidthMm: 3,
   bandThicknessMm: 1.6,
   bandProfile: 'wave',
-  // Localized pinch: hard waist in one sector only; rest of band flat
-  waveAmplitudeMm: 1.25,
+  // Full crest-to-trough envelope, not centerline displacement.
+  waveAmplitudeMm: 8.3,
   waveCount: 1,
   wavePhaseDeg: 0,
-  waveSpanDeg: 100,
-  waveTopSpanDeg: 100,
-  waveBotSpanDeg: 100,
+  waveSpanDeg: 120,
+  waveTopSpanDeg: 120,
+  waveBotSpanDeg: 120,
+  waveTopFlankMm: 5.2,
+  waveBotFlankMm: 5,
+  wavePinchAngleDeg: 120,
   waveSharpness: 0,
   waveAsymmetry: 0,
   waveCharacter: 1,
@@ -115,6 +126,8 @@ export const DEFAULT_PARAMS: RingParams = {
   textSizeMm: 1.5,
   dateTextSizeMm: 1.35,
   textAngleDeg: 0,
+  innerTextAngleDeg: 0,
+  dateAngleDeg: 180,
   font: 'tengwar-annatar-italic',
   innerTengwarKeys: '',
   outerTengwarKeys: '',

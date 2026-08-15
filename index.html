@@ -42,6 +42,11 @@
         </div>
       </header>
 
+      <div class="view-helper-shell" aria-hidden="true">
+        <span>6-axis view</span>
+        <small>Drag the arcball · click an axis</small>
+      </div>
+
       <aside class="panel">
         <div class="panel-header">
           <h2>Ring design</h2>
@@ -71,7 +76,7 @@
                   min="1.5"
                   max="12"
                   step="0.1"
-                  value="3.5"
+                  value="3"
                   inputmode="decimal"
                 />
               </div>
@@ -98,16 +103,16 @@
             <div id="wave-controls">
               <div class="field">
                 <label>
-                  Pinch amplitude
-                  <span class="value" id="val-wave-amplitude">1.25 mm</span>
+                  Pinch total width
+                  <span class="value" id="val-wave-amplitude">8.30 mm</span>
                 </label>
                 <input
                   type="range"
                   id="waveAmplitudeMm"
-                  min="0"
-                  max="2.5"
+                  min="3.7"
+                  max="10"
                   step="0.05"
-                  value="1.25"
+                  value="8.3"
                 />
               </div>
               <input type="hidden" id="waveCount" value="1" />
@@ -129,34 +134,49 @@
               </div>
               <div class="field">
                 <label>
-                  Upper flank length
-                  <span class="value" id="val-wave-top-span">100° · — mm</span>
+                  Upper flank reach (green)
+                  <span class="value" id="val-wave-top-flank">— mm measured</span>
                 </label>
                 <input
                   type="range"
-                  id="waveTopSpanDeg"
-                  min="40"
-                  max="220"
-                  step="1"
-                  value="100"
+                  id="waveTopFlankMm"
+                  min="3"
+                  max="9"
+                  step="0.05"
+                  value="5.2"
                 />
               </div>
               <div class="field">
                 <label>
-                  Lower flank length
-                  <span class="value" id="val-wave-bot-span">100° · — mm</span>
+                  Lower flank reach (blue)
+                  <span class="value" id="val-wave-bot-flank">— mm measured</span>
                 </label>
                 <input
                   type="range"
-                  id="waveBotSpanDeg"
-                  min="40"
-                  max="220"
-                  step="1"
-                  value="100"
+                  id="waveBotFlankMm"
+                  min="3"
+                  max="9"
+                  step="0.05"
+                  value="5"
                 />
               </div>
-              <!-- Derived max span for cache / legacy readers -->
-              <input type="hidden" id="waveSpanDeg" value="100" />
+              <div class="field">
+                <label>
+                  Pinch angle (red)
+                  <span class="value" id="val-wave-pinch-angle">120°</span>
+                </label>
+                <input
+                  type="range"
+                  id="wavePinchAngleDeg"
+                  min="70"
+                  max="140"
+                  step="1"
+                  value="120"
+                />
+              </div>
+              <input type="hidden" id="waveSpanDeg" value="120" />
+              <input type="hidden" id="waveTopSpanDeg" value="120" />
+              <input type="hidden" id="waveBotSpanDeg" value="120" />
               <div class="field">
                 <label>
                   Corner hardness
@@ -172,14 +192,14 @@
                 />
               </div>
               <p class="hint">
-                Pinch sits in one sector only — the rest of the band stays a flat D.
-                Upper / lower flank length stretch the two parallel diagonals of the S
-                (path length shown in mm on the ring and next to the sliders).
-                Corner hardness only rounds the kink; amplitude stays put.
+                Total width is the complete S-envelope, capped at 10 mm.
+                Green and blue set each transition's reach; their live values
+                measure the resulting edge paths. Red opens the lower corner;
+                the feature returns to a flat band locally.
               </p>
             </div>
-            <p class="hint" id="profile-hint">
-              Localized pinch · flat band elsewhere · domed outer · flat inner bore
+              <p class="hint" id="profile-hint">
+              Localized S · 3.70 mm shoulder · nominal-width crest and stroke
             </p>
           </section>
 
@@ -255,14 +275,14 @@
                 autocomplete="off"
               />
               <p class="hint" style="margin-top: 6px">
-                Opposite the primary text · Inter · e.g. 27.09.2026
+                Inter · e.g. 27.09.2026
               </p>
             </div>
             <div class="field">
               <label for="outerText">Outer text (Latin)</label>
               <textarea id="outerText" spellcheck="false" placeholder="Optional outer engraving…"></textarea>
-              <p class="hint" style="margin-top: 6px">
-                Starts at the same angular position as the inner line.
+              <p class="hint" id="outer-text-position-hint" style="margin-top: 6px">
+                Shares the wave-band text position.
               </p>
             </div>
             <details class="advanced-keys">
@@ -296,23 +316,37 @@
               </label>
               <input type="range" id="textSizeMm" min="0.6" max="2.2" step="0.05" value="1.35" />
             </div>
+            <div class="field" id="d-inner-text-position-field" hidden>
+              <label for="innerTextAngleDeg">
+                Inner text position
+                <span class="value" id="val-inner-text-angle">0°</span>
+              </label>
+              <input type="range" id="innerTextAngleDeg" min="0" max="360" step="1" value="0" />
+            </div>
             <div class="field">
-              <label>
+              <label for="dateTextSizeMm">
                 Date size
                 <span class="value" id="val-date-size">1.10 mm</span>
               </label>
               <input type="range" id="dateTextSizeMm" min="0.5" max="1.8" step="0.05" value="1.35" />
             </div>
             <div class="field">
-              <label>
+              <label for="dateAngleDeg">
+                Date position
+                <span class="value" id="val-date-angle">180°</span>
+              </label>
+              <input type="range" id="dateAngleDeg" min="0" max="360" step="1" value="180" />
+            </div>
+            <div class="field">
+              <label for="textDepthMm">
                 Engraving depth
                 <span class="value" id="val-text-depth">0.35 mm</span>
               </label>
               <input type="range" id="textDepthMm" min="0.1" max="0.7" step="0.05" value="0.35" />
             </div>
             <div class="field">
-              <label>
-                Text rotation
+              <label for="textAngleDeg">
+                <span id="text-position-label">Text position</span>
                 <span class="value" id="val-text-angle">0°</span>
               </label>
               <input type="range" id="textAngleDeg" min="0" max="360" step="1" value="0" />
@@ -364,7 +398,7 @@
               <input type="checkbox" id="showDimensions" checked />
             </label>
             <p class="hint" style="margin-bottom: 8px">
-              Live mm / angle callouts in the 3D view (pinch full width, span, band size).
+              Live mm / angle callouts in the 3D view (full width, flanks, red angle, band size).
             </p>
             <label class="toggle-row">
               <span>Cutaway (inspect engraving)</span>
@@ -387,7 +421,7 @@
           <span class="build-busy-dot" aria-hidden="true"></span>
           <span id="build-busy-label">Updating…</span>
         </div>
-        <div class="badge hint">Drag to orbit · Scroll to zoom · Right-drag to pan</div>
+        <div class="badge hint">Drag the arcball · Scroll to zoom · Right-drag to pan · Click an axis to snap</div>
       </div>
 
       <!-- Visible on hard refresh until first ring mesh is ready (JS toggles). -->

@@ -1,6 +1,7 @@
 import './style.css'
 import * as THREE from 'three'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { ArcballControls } from 'three/examples/jsm/controls/ArcballControls.js'
+import { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper.js'
 import {
   applyCutawayToGroup,
   applyMetalToGroup,
@@ -22,6 +23,7 @@ import {
   type LightPreset,
 } from './lighting'
 import { DimensionOverlay } from './dimensionOverlay'
+import { PINCH_SHOULDER_WIDTH_MM } from './ringGeometry'
 import { DEFAULT_PARAMS, RING_SIZE_PRESETS } from './types'
 import type { BandProfile, RingParams, MetalFinish } from './types'
 
@@ -49,6 +51,7 @@ let basePreviewParams: RingParams | null = null
 let environmentPromise: Promise<void> | null = null
 /** True until the first ring mesh is shown after boot / hard refresh. */
 let isInitialLoad = true
+let renderRequested = false
 
 // Live preview is draft quality. The viewport settles to the selected quality
 // without CSG; solid boolean carving is reserved for explicit STL export.
@@ -74,15 +77,83 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x0c0b0a)
 scene.fog = new THREE.Fog(0x0c0b0a, 80, 220)
 
+const INITIAL_CAMERA_POSITION = new THREE.Vector3(22, 14, 20)
 const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 500)
-camera.position.set(22, 14, 20)
+camera.position.copy(INITIAL_CAMERA_POSITION)
 
-const controls = new OrbitControls(camera, renderer.domElement)
-controls.enableDamping = true
-controls.dampingFactor = 0.06
+type ArcballWithTarget = ArcballControls & { target: THREE.Vector3 }
+const controls = new ArcballControls(camera, renderer.domElement, scene) as ArcballWithTarget
+controls.enableAnimations = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+controls.dampingFactor = 18
 controls.minDistance = 8
 controls.maxDistance = 120
+controls.cursorZoom = true
+controls.enableGrid = false
 controls.target.set(0, 0, 0)
+controls.setTbRadius(0.68)
+controls.setGizmosVisible(true)
+controls.update()
+controls.saveState()
+
+const viewHelper = new ViewHelper(camera, renderer.domElement)
+viewHelper.center.set(0, 0, 0)
+viewHelper.location.top = 88
+viewHelper.location.right = 18
+viewHelper.setLabels('X', 'Y', 'Z')
+viewHelper.setLabelStyle('600 20px system-ui', '#f2ebe0', 14)
+
+// Three restrained great circles make the view widget read as an arcball.
+// Dragging anywhere on it still goes through ArcballControls; its 6 endpoint
+// sprites snap the camera to ±X, ±Y, and ±Z.
+const viewSphereMaterial = new THREE.LineBasicMaterial({
+  color: 0xc9a227,
+  transparent: true,
+  opacity: 0.22,
+  depthTest: false,
+  toneMapped: false,
+})
+const viewSpherePoints = Array.from({ length: 65 }, (_, i) => {
+  const angle = (i / 64) * Math.PI * 2
+  return new THREE.Vector3(Math.cos(angle) * 0.82, Math.sin(angle) * 0.82, 0)
+})
+for (const rotation of [
+  new THREE.Euler(0, 0, 0),
+  new THREE.Euler(Math.PI / 2, 0, 0),
+  new THREE.Euler(0, Math.PI / 2, 0),
+]) {
+  const circle = new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints(viewSpherePoints),
+    viewSphereMaterial,
+  )
+  circle.rotation.copy(rotation)
+  circle.renderOrder = -1
+  viewHelper.add(circle)
+}
+viewHelper.traverse((object) => {
+  if (
+    object instanceof THREE.Sprite &&
+    (object.position.x < 0 || object.position.y < 0 || object.position.z < 0)
+  ) {
+    object.material.color.set(0x8e8475)
+    object.material.opacity = 0.72
+    object.material.transparent = true
+  }
+})
+
+let helperPointerStart: { x: number; y: number } | null = null
+renderer.domElement.addEventListener('pointerdown', (event) => {
+  helperPointerStart = { x: event.clientX, y: event.clientY }
+})
+renderer.domElement.addEventListener('pointerup', (event) => {
+  const start = helperPointerStart
+  helperPointerStart = null
+  if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return
+  viewHelper.center.copy(controls.target)
+  if (viewHelper.handleClick(event)) {
+    controls.enabled = false
+    requestRender()
+  }
+})
 
 const lights = createSceneLights(scene)
 applyLightPreset(lightPreset, lights, scene, renderer)
@@ -215,30 +286,47 @@ function updateDimLabels() {
   $('val-date-size').textContent = `${fmt(params.dateTextSizeMm, 2)} mm`
   $('val-text-depth').textContent = `${fmt(params.textDepthMm, 2)} mm`
   $('val-text-angle').textContent = `${Math.round(params.textAngleDeg)}°`
+  $('val-inner-text-angle').textContent = `${Math.round(params.innerTextAngleDeg)}°`
+  $('val-date-angle').textContent = `${Math.round(params.dateAngleDeg)}°`
 
   const waveAmp = document.getElementById('val-wave-amplitude')
   if (waveAmp) waveAmp.textContent = `${fmt(params.waveAmplitudeMm, 2)} mm`
+  const waveAmpInput = document.getElementById('waveAmplitudeMm') as HTMLInputElement | null
+  if (waveAmpInput) {
+    waveAmpInput.min = String(
+      Math.max(Math.min(params.bandWidthMm, 10), PINCH_SHOULDER_WIDTH_MM),
+    )
+  }
+  const bandWidthInput = document.getElementById('bandWidthMm') as HTMLInputElement | null
+  if (bandWidthInput) bandWidthInput.max = params.bandProfile === 'wave' ? '10' : '12'
   const wavePhase = document.getElementById('val-wave-phase')
   if (wavePhase) wavePhase.textContent = `${Math.round(params.wavePhaseDeg)}°`
-  // Flank path lengths (3D) are filled after measureRing in updateDimensionOverlay
-  const waveTopSpan = document.getElementById('val-wave-top-span')
-  if (waveTopSpan && !waveTopSpan.dataset.flankMm) {
-    waveTopSpan.textContent = `${Math.round(params.waveTopSpanDeg)}°`
-  }
-  const waveBotSpan = document.getElementById('val-wave-bot-span')
-  if (waveBotSpan && !waveBotSpan.dataset.flankMm) {
-    waveBotSpan.textContent = `${Math.round(params.waveBotSpanDeg)}°`
-  }
+  const wavePinchAngle = document.getElementById('val-wave-pinch-angle')
+  if (wavePinchAngle) wavePinchAngle.textContent = `${Math.round(params.wavePinchAngleDeg)}°`
   const waveSharp = document.getElementById('val-wave-sharpness')
   if (waveSharp) waveSharp.textContent = fmt(params.waveSharpness, 2)
 
   const wavePanel = document.getElementById('wave-controls')
   if (wavePanel) wavePanel.hidden = params.bandProfile !== 'wave'
+  const dInnerTextPosition = document.getElementById('d-inner-text-position-field')
+  if (dInnerTextPosition) dInnerTextPosition.hidden = params.bandProfile !== 'd'
+  const textPositionLabel = document.getElementById('text-position-label')
+  if (textPositionLabel) {
+    textPositionLabel.textContent =
+      params.bandProfile === 'wave' ? 'Text position' : 'Outer text position'
+  }
+  const outerTextPositionHint = document.getElementById('outer-text-position-hint')
+  if (outerTextPositionHint) {
+    outerTextPositionHint.textContent =
+      params.bandProfile === 'wave'
+        ? 'Shares the wave-band text position.'
+        : 'Uses the outer text position control below.'
+  }
   const profileHint = document.getElementById('profile-hint')
   if (profileHint) {
     profileHint.textContent =
       params.bandProfile === 'wave'
-        ? 'Localized pinch · flat band elsewhere · domed outer · flat inner bore'
+        ? 'Localized S · 3.70 mm shoulder · nominal-width crest and stroke'
         : 'Domed (D-shape) · rounded outer face · flat inner face'
   }
 
@@ -257,29 +345,16 @@ function syncLabels() {
 
 function updateDimensionOverlay() {
   const m = dimOverlay.update(params)
-  // Live flank path lengths next to the sliders (true 3D edge length in mm)
-  const waveTopSpan = document.getElementById('val-wave-top-span')
-  if (waveTopSpan) {
-    if (m.isWave && m.pinchTopFlankMm > 0) {
-      waveTopSpan.dataset.flankMm = '1'
-      waveTopSpan.textContent = `${Math.round(m.pinchTopSpanDeg)}° · ${fmt(m.pinchTopFlankMm, 2)} mm`
-    } else {
-      delete waveTopSpan.dataset.flankMm
-      waveTopSpan.textContent = `${Math.round(params.waveTopSpanDeg)}°`
-    }
+  const waveTopFlank = document.getElementById('val-wave-top-flank')
+  if (waveTopFlank) {
+    waveTopFlank.textContent = `${fmt(m.pinchTopFlankMm, 2)} mm measured`
   }
-  const waveBotSpan = document.getElementById('val-wave-bot-span')
-  if (waveBotSpan) {
-    if (m.isWave && m.pinchBotFlankMm > 0) {
-      waveBotSpan.dataset.flankMm = '1'
-      waveBotSpan.textContent = `${Math.round(m.pinchBotSpanDeg)}° · ${fmt(m.pinchBotFlankMm, 2)} mm`
-    } else {
-      delete waveBotSpan.dataset.flankMm
-      waveBotSpan.textContent = `${Math.round(params.waveBotSpanDeg)}°`
-    }
+  const waveBotFlank = document.getElementById('val-wave-bot-flank')
+  if (waveBotFlank) {
+    waveBotFlank.textContent = `${fmt(m.pinchBotFlankMm, 2)} mm measured`
   }
   // Surface key pinch measurement in the status bar for quick reading
-  if (m.isWave && params.waveAmplitudeMm > 0) {
+  if (m.isWave && m.pinchSpanDeg > 0) {
     const pin = ` · pinch full width <strong class="dim-readout">${fmt(m.pinchEnvelopeMm, 2)} mm</strong>`
     const span = ` · span ${Math.round(m.pinchSpanDeg)}°`
     // statsEl is also written by build pipeline; only set a dim hint attribute for merge
@@ -299,6 +374,15 @@ function appendPinchToStats(baseHtml: string): string {
 }
 
 function readParamsFromUi(): RingParams {
+  const bandProfile = ($('bandProfile') as HTMLSelectElement).value as BandProfile
+  const bandWidthInput = $('bandWidthMm') as HTMLInputElement
+  const bandWidthMm = clampNum(
+    parseNum(bandWidthInput.value),
+    1.5,
+    bandProfile === 'wave' ? 10 : 12,
+    DEFAULT_PARAMS.bandWidthMm,
+  )
+  bandWidthInput.value = String(bandWidthMm)
   return {
     innerDiameterMm: clampNum(
       parseNum(($('innerDiameterMm') as HTMLInputElement).value),
@@ -306,23 +390,18 @@ function readParamsFromUi(): RingParams {
       30,
       DEFAULT_PARAMS.innerDiameterMm,
     ),
-    bandWidthMm: clampNum(
-      parseNum(($('bandWidthMm') as HTMLInputElement).value),
-      1.5,
-      12,
-      DEFAULT_PARAMS.bandWidthMm,
-    ),
+    bandWidthMm,
     bandThicknessMm: clampNum(
       parseNum(($('bandThicknessMm') as HTMLInputElement).value),
       0.6,
       4,
       DEFAULT_PARAMS.bandThicknessMm,
     ),
-    bandProfile: ($('bandProfile') as HTMLSelectElement).value as BandProfile,
+    bandProfile,
     waveAmplitudeMm: clampNum(
       Number(($('waveAmplitudeMm') as HTMLInputElement).value),
-      0,
-      2.5,
+      Math.max(Math.min(bandWidthMm, 10), PINCH_SHOULDER_WIDTH_MM),
+      10,
       DEFAULT_PARAMS.waveAmplitudeMm,
     ),
     waveCount: 1,
@@ -332,32 +411,26 @@ function readParamsFromUi(): RingParams {
       360,
       DEFAULT_PARAMS.wavePhaseDeg,
     ),
-    waveTopSpanDeg: clampNum(
-      Number(($('waveTopSpanDeg') as HTMLInputElement).value),
-      40,
-      220,
-      DEFAULT_PARAMS.waveTopSpanDeg,
+    waveSpanDeg: DEFAULT_PARAMS.waveSpanDeg,
+    waveTopSpanDeg: DEFAULT_PARAMS.waveTopSpanDeg,
+    waveBotSpanDeg: DEFAULT_PARAMS.waveBotSpanDeg,
+    waveTopFlankMm: clampNum(
+      Number(($('waveTopFlankMm') as HTMLInputElement).value),
+      3,
+      9,
+      DEFAULT_PARAMS.waveTopFlankMm,
     ),
-    waveBotSpanDeg: clampNum(
-      Number(($('waveBotSpanDeg') as HTMLInputElement).value),
-      40,
-      220,
-      DEFAULT_PARAMS.waveBotSpanDeg,
+    waveBotFlankMm: clampNum(
+      Number(($('waveBotFlankMm') as HTMLInputElement).value),
+      3,
+      9,
+      DEFAULT_PARAMS.waveBotFlankMm,
     ),
-    // Derived: densify / overlay envelope uses the longer edge
-    waveSpanDeg: Math.max(
-      clampNum(
-        Number(($('waveTopSpanDeg') as HTMLInputElement).value),
-        40,
-        220,
-        DEFAULT_PARAMS.waveTopSpanDeg,
-      ),
-      clampNum(
-        Number(($('waveBotSpanDeg') as HTMLInputElement).value),
-        40,
-        220,
-        DEFAULT_PARAMS.waveBotSpanDeg,
-      ),
+    wavePinchAngleDeg: clampNum(
+      Number(($('wavePinchAngleDeg') as HTMLInputElement).value),
+      70,
+      140,
+      DEFAULT_PARAMS.wavePinchAngleDeg,
     ),
     waveSharpness: clampNum(
       Number(($('waveSharpness') as HTMLInputElement).value),
@@ -376,6 +449,18 @@ function readParamsFromUi(): RingParams {
     textSizeMm: Number(($('textSizeMm') as HTMLInputElement).value),
     dateTextSizeMm: Number(($('dateTextSizeMm') as HTMLInputElement).value),
     textAngleDeg: Number(($('textAngleDeg') as HTMLInputElement).value),
+    innerTextAngleDeg: clampNum(
+      Number(($('innerTextAngleDeg') as HTMLInputElement).value),
+      0,
+      360,
+      DEFAULT_PARAMS.innerTextAngleDeg,
+    ),
+    dateAngleDeg: clampNum(
+      Number(($('dateAngleDeg') as HTMLInputElement).value),
+      0,
+      360,
+      DEFAULT_PARAMS.dateAngleDeg,
+    ),
     font: ($('font') as HTMLSelectElement).value as RingParams['font'],
     metal: ($('metal') as HTMLSelectElement).value as MetalFinish,
     quality: ($('quality') as HTMLSelectElement).value as RingParams['quality'],
@@ -391,11 +476,12 @@ function writeParamsToUi(p: RingParams) {
   ;($('waveAmplitudeMm') as HTMLInputElement).value = String(p.waveAmplitudeMm)
   ;($('waveCount') as HTMLInputElement).value = '1'
   ;($('wavePhaseDeg') as HTMLInputElement).value = String(p.wavePhaseDeg)
+  ;($('waveSpanDeg') as HTMLInputElement).value = String(p.waveSpanDeg)
   ;($('waveTopSpanDeg') as HTMLInputElement).value = String(p.waveTopSpanDeg)
   ;($('waveBotSpanDeg') as HTMLInputElement).value = String(p.waveBotSpanDeg)
-  ;($('waveSpanDeg') as HTMLInputElement).value = String(
-    Math.max(p.waveTopSpanDeg, p.waveBotSpanDeg, p.waveSpanDeg),
-  )
+  ;($('waveTopFlankMm') as HTMLInputElement).value = String(p.waveTopFlankMm)
+  ;($('waveBotFlankMm') as HTMLInputElement).value = String(p.waveBotFlankMm)
+  ;($('wavePinchAngleDeg') as HTMLInputElement).value = String(p.wavePinchAngleDeg)
   ;($('waveSharpness') as HTMLInputElement).value = String(p.waveSharpness)
   ;($('waveAsymmetry') as HTMLInputElement).value = '0'
   ;($('waveCharacter') as HTMLInputElement).value = '1'
@@ -408,6 +494,8 @@ function writeParamsToUi(p: RingParams) {
   ;($('textSizeMm') as HTMLInputElement).value = String(p.textSizeMm)
   ;($('dateTextSizeMm') as HTMLInputElement).value = String(p.dateTextSizeMm)
   ;($('textAngleDeg') as HTMLInputElement).value = String(p.textAngleDeg)
+  ;($('innerTextAngleDeg') as HTMLInputElement).value = String(p.innerTextAngleDeg)
+  ;($('dateAngleDeg') as HTMLInputElement).value = String(p.dateAngleDeg)
   ;($('font') as HTMLSelectElement).value = p.font
   ;($('metal') as HTMLSelectElement).value = p.metal
   ;($('quality') as HTMLSelectElement).value = p.quality
@@ -442,7 +530,12 @@ function applyCosmeticMetal(metal: MetalFinish) {
 function applyCosmeticCutaway(cutaway: boolean) {
   params = { ...params, cutaway }
   if (built) {
-    built.cutawayPlane = applyCutawayToGroup(built.group, cutaway, params.textAngleDeg)
+    const hasInnerText = !!(params.innerText.trim() || params.innerTengwarKeys.trim())
+    const cutawayAngleDeg =
+      params.bandProfile === 'd' && hasInnerText
+        ? params.innerTextAngleDeg
+        : params.textAngleDeg
+    built.cutawayPlane = applyCutawayToGroup(built.group, cutaway, cutawayAngleDeg)
   }
   requestRender()
 }
@@ -475,6 +568,9 @@ function paramsEqualGeom(a: RingParams, b: RingParams): boolean {
     a.waveSpanDeg === b.waveSpanDeg &&
     a.waveTopSpanDeg === b.waveTopSpanDeg &&
     a.waveBotSpanDeg === b.waveBotSpanDeg &&
+    a.waveTopFlankMm === b.waveTopFlankMm &&
+    a.waveBotFlankMm === b.waveBotFlankMm &&
+    a.wavePinchAngleDeg === b.wavePinchAngleDeg &&
     a.waveSharpness === b.waveSharpness &&
     a.waveAsymmetry === b.waveAsymmetry &&
     a.waveCharacter === b.waveCharacter &&
@@ -487,6 +583,8 @@ function paramsEqualGeom(a: RingParams, b: RingParams): boolean {
     a.textSizeMm === b.textSizeMm &&
     a.dateTextSizeMm === b.dateTextSizeMm &&
     a.textAngleDeg === b.textAngleDeg &&
+    a.innerTextAngleDeg === b.innerTextAngleDeg &&
+    a.dateAngleDeg === b.dateAngleDeg &&
     a.font === b.font &&
     a.quality === b.quality
     // metal + cutaway are cosmetic
@@ -708,13 +806,16 @@ const geomLiveIds = [
   'bandProfile',
   'waveAmplitudeMm',
   'wavePhaseDeg',
-  'waveTopSpanDeg',
-  'waveBotSpanDeg',
+  'waveTopFlankMm',
+  'waveBotFlankMm',
+  'wavePinchAngleDeg',
   'waveSharpness',
   'textDepthMm',
   'textSizeMm',
   'dateTextSizeMm',
   'textAngleDeg',
+  'innerTextAngleDeg',
+  'dateAngleDeg',
   'quality',
 ] as const
 
@@ -725,8 +826,9 @@ const bandShapeIds = new Set([
   'bandProfile',
   'waveAmplitudeMm',
   'wavePhaseDeg',
-  'waveTopSpanDeg',
-  'waveBotSpanDeg',
+  'waveTopFlankMm',
+  'waveBotFlankMm',
+  'wavePinchAngleDeg',
   'waveSharpness',
 ])
 
@@ -856,9 +958,15 @@ $('btn-export').addEventListener('click', doExport)
 $('btn-export-footer').addEventListener('click', doExport)
 
 $('btn-reset-camera').addEventListener('click', () => {
-  camera.position.set(22, 14, 20)
+  viewHelper.animating = false
+  camera.position.copy(INITIAL_CAMERA_POSITION)
+  camera.up.set(0, 1, 0)
   controls.target.set(0, 0, 0)
-  controls.update()
+  controls.setCamera(camera)
+  controls.setTbRadius(0.68)
+  controls.enabled = true
+  controls.saveState()
+  viewHelper.center.copy(controls.target)
   requestRender()
 })
 
@@ -871,11 +979,11 @@ function onResize() {
   camera.updateProjectionMatrix()
   renderer.setSize(w, h)
   dimOverlay.resize(w, h)
+  viewHelper.location.top = w <= 720 ? 82 : 88
+  viewHelper.location.right = w <= 720 ? 8 : 18
   requestRender()
 }
 window.addEventListener('resize', onResize)
-
-let renderRequested = false
 
 /** Render only when scene/camera state changes; damping queues its own tail frames. */
 function requestRender() {
@@ -901,12 +1009,33 @@ function prepareEnvironment(): Promise<void> {
   return environmentPromise
 }
 
-function renderFrame() {
+let lastRenderTime = performance.now()
+
+function renderFrame(now: number) {
   renderRequested = false
-  const controlsChanged = controls.update()
+  const deltaSeconds = Math.min(0.05, Math.max(0, (now - lastRenderTime) / 1000))
+  lastRenderTime = now
+  const helperWasAnimating = viewHelper.animating
+  if (helperWasAnimating) viewHelper.update(deltaSeconds)
+  if (helperWasAnimating && !viewHelper.animating) {
+    // Arcball keeps its own camera matrices. Adopt the snapped camera once the
+    // helper lands, preserving the helper's roll for the ±Y directions.
+    camera.up.set(0, 1, 0).applyQuaternion(camera.quaternion)
+    controls.setCamera(camera)
+    controls.setTbRadius(0.68)
+    controls.enabled = true
+  } else if (!helperWasAnimating) {
+    controls.update()
+  }
   renderer.render(scene, camera)
   dimOverlay.render(scene, camera)
-  if (controlsChanged) requestRender()
+  // ViewHelper renders a second Three.js scene. Prevent that pass from
+  // clearing the main ring framebuffer first.
+  const autoClear = renderer.autoClear
+  renderer.autoClear = false
+  viewHelper.render(renderer)
+  renderer.autoClear = autoClear
+  if (viewHelper.animating) requestRender()
 }
 
 controls.addEventListener('change', requestRender)

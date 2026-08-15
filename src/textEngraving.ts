@@ -4,6 +4,7 @@ import type { Font, Path } from 'opentype.js'
 import { loadDateFont, loadRingFont } from './fontLoader'
 import {
   bandEdgesAt,
+  edgeSpanDegs,
   maxBandHalfExtentMm,
   minBandWidthMm,
   outerDomeFrame,
@@ -11,6 +12,9 @@ import {
 } from './ringGeometry'
 import type { RingParams, TextSurface } from './types'
 import { resolveInscriptionText } from './tengwarTranscribe'
+
+/** Extra clearance past the pinch window so glyphs don’t graze the soft fade. */
+const PINCH_TEXT_MARGIN_DEG = 8
 
 /** Band cross-section params needed to map outer ink onto the D-profile dome. */
 interface DomeParams {
@@ -208,6 +212,9 @@ function textLayoutKey(params: RingParams): string {
     params.waveSpanDeg,
     params.waveTopSpanDeg,
     params.waveBotSpanDeg,
+    params.waveTopFlankMm,
+    params.waveBotFlankMm,
+    params.wavePinchAngleDeg,
     params.waveSharpness,
     params.waveAsymmetry,
     params.waveCharacter,
@@ -220,6 +227,8 @@ function textLayoutKey(params: RingParams): string {
     params.textSizeMm,
     params.dateTextSizeMm,
     params.textAngleDeg,
+    params.innerTextAngleDeg,
+    params.dateAngleDeg,
     params.font,
   ])
 }
@@ -477,12 +486,111 @@ async function layoutTextRun(
 }
 
 /**
+ * Pinch sector that inscriptions must not enter (radians).
+ * `halfRad` includes a soft margin past the mesh pinch window.
+ */
+function pinchTextExclusion(
+  params: RingParams,
+): { phaseRad: number; halfRad: number } | null {
+  if (params.bandProfile !== 'wave' || params.waveAmplitudeMm <= params.bandWidthMm) return null
+  const { maxDeg } = edgeSpanDegs(params)
+  if (maxDeg <= 0) return null
+  const halfDeg = Math.min(170, maxDeg / 2 + PINCH_TEXT_MARGIN_DEG)
+  return {
+    phaseRad: normalizeAngle((params.wavePhaseDeg * Math.PI) / 180),
+    halfRad: (halfDeg * Math.PI) / 180,
+  }
+}
+
+/** Shortest absolute angular distance in [0, π]. */
+function angularDistance(a: number, b: number): number {
+  return Math.abs(normalizeAngle(a - b))
+}
+
+/** True if a centered run of half-angle `halfRun` intersects the pinch exclusion. */
+function runOverlapsPinch(
+  center: number,
+  halfRun: number,
+  excl: { phaseRad: number; halfRad: number },
+): boolean {
+  return angularDistance(center, excl.phaseRad) < excl.halfRad + Math.max(halfRun, 0)
+}
+
+/**
+ * Conservative half-angle of a text run (radians) for pinch avoidance.
+ * Slightly overestimates so we err on the side of the flat band.
+ */
+function estimateRunHalfAngleRad(
+  text: string,
+  keysOverride: string | undefined,
+  sizeMm: number,
+  radius: number,
+  latinSafe: boolean,
+): number {
+  const raw = (keysOverride ?? text).trim()
+  if (!raw) return 0
+  // Count visible-ish units; keys strings are denser than plain Latin.
+  const units = Math.max(raw.replace(/\s+/g, '').length, 1)
+  const em = latinSafe ? 0.58 : 0.72
+  const widthMm = Math.max(units * sizeMm * em, sizeMm * 0.9)
+  return widthMm / 2 / Math.max(radius, 1e-3)
+}
+
+/**
+ * Snap a preferred center into the flat (non-pinch) arc so the whole run fits.
+ * When `avoid` is set, keep the runs from stacking.
+ */
+function placeCenterOnFlatBand(
+  preferred: number,
+  halfRun: number,
+  excl: { phaseRad: number; halfRad: number } | null,
+  avoid?: { center: number; half: number },
+): number {
+  if (!excl) return normalizeAngle(preferred)
+
+  const gap = 0.12 // ~7° minimum air gap between runs
+  const fits = (θ: number): boolean => {
+    if (runOverlapsPinch(θ, halfRun, excl)) return false
+    if (avoid && angularDistance(θ, avoid.center) < halfRun + avoid.half + gap) {
+      return false
+    }
+    return true
+  }
+
+  const pref = normalizeAngle(preferred)
+  if (fits(pref)) return pref
+
+  // Prefer the middle of the flat sector (opposite the pinch).
+  const flatCenter = normalizeAngle(excl.phaseRad + Math.PI)
+  if (fits(flatCenter)) return flatCenter
+
+  // Scan the circle; score by proximity to preferred + separation from avoid.
+  let best = flatCenter
+  let bestScore = -Infinity
+  const samples = 180
+  for (let i = 0; i < samples; i++) {
+    const θ = (i / samples) * Math.PI * 2
+    if (!fits(θ)) continue
+    const nearPref = -angularDistance(θ, pref)
+    const awayAvoid = avoid ? angularDistance(θ, avoid.center) : 0
+    const score = nearPref * 0.35 + awayAvoid
+    if (score > bestScore) {
+      bestScore = score
+      best = θ
+    }
+  }
+  return normalizeAngle(best)
+}
+
+/**
  * Layout inner (primary + Latin date) and/or outer inscriptions.
  *
- * Placement (restored from working versions):
- * - Primary inner + outer share the same center angle (`textAngleDeg`).
- * - Date is centered opposite the primary run’s midpoint (not the start),
- *   so long Tengwar does not collide with the date.
+ * Placement:
+ * - Wave inner + outer text share `textAngleDeg` and are snapped onto the flat
+ *   sector. D-shaped inner text uses `innerTextAngleDeg` independently.
+ * - D-shaped outer text continues to use `textAngleDeg`.
+ * - Date uses its independent center angle (`dateAngleDeg`) exactly. Explicit
+ *   positioning must remain continuous, including through the pinch sector.
  */
 export async function buildTextLayout(
   params: RingParams,
@@ -499,7 +607,6 @@ export async function buildTextLayout(
     usableWidth * 0.55,
   )
   const depthMm = Math.min(params.textDepthMm, params.bandThicknessMm * 0.75)
-  const startAngle = (params.textAngleDeg * Math.PI) / 180
   const innerR = params.innerDiameterMm / 2
   const outerR = innerR + params.bandThicknessMm
 
@@ -512,28 +619,71 @@ export async function buildTextLayout(
     edgeParams: params,
   }
 
-  // Date is centered diametrically opposite the primary (center-aligned) run.
-  const dateAngle = startAngle + Math.PI
+  const excl = pinchTextExclusion(params)
+  const preferredPrimary = (params.textAngleDeg * Math.PI) / 180
+  const preferredDInner = (params.innerTextAngleDeg * Math.PI) / 180
+  const preferredDate = (params.dateAngleDeg * Math.PI) / 180
+
+  const hasInner = !!(params.innerText.trim() || params.innerTengwarKeys.trim())
+  const hasOuter = !!(params.outerText.trim() || params.outerTengwarKeys.trim())
+  const hasDate = !!params.innerDateText.trim()
+
+  const primaryHalf = hasInner
+    ? estimateRunHalfAngleRad(
+        params.innerText,
+        params.innerTengwarKeys || undefined,
+        sizeMm,
+        innerR,
+        false,
+      )
+    : hasOuter
+      ? estimateRunHalfAngleRad(
+          params.outerText,
+          params.outerTengwarKeys || undefined,
+          sizeMm,
+          outerR,
+          false,
+        )
+      : 0
+  const outerHalf = hasOuter
+    ? estimateRunHalfAngleRad(
+        params.outerText,
+        params.outerTengwarKeys || undefined,
+        sizeMm,
+        outerR,
+        false,
+      )
+    : 0
+  // Wave inner + outer text share this pinch-safe position. On D bands it is
+  // the independent outer-text position because no pinch exclusion applies.
+  const sharedTextAngle = placeCenterOnFlatBand(
+    preferredPrimary,
+    Math.max(primaryHalf, outerHalf),
+    excl,
+  )
+  const innerTextAngle =
+    params.bandProfile === 'd' ? normalizeAngle(preferredDInner) : sharedTextAngle
+  // Independent manufacturing parameter: never snap or collapse slider ranges.
+  const dateAngle = normalizeAngle(preferredDate)
 
   const jobs: SurfaceJob[] = []
 
-  if (params.innerText.trim() || params.innerTengwarKeys.trim()) {
+  if (hasInner) {
     jobs.push({
       text: params.innerText.trim(),
       surface: 'inner',
       radius: innerR,
-      angleRad: startAngle,
+      angleRad: innerTextAngle,
       sizeMm,
       font: primaryFont,
       keysOverride: params.innerTengwarKeys.trim() || undefined,
-      angularDirection: 1,
+      angularDirection: -1,
     })
   }
-  if (params.innerDateText.trim()) {
+  if (hasDate) {
     jobs.push({
       text: params.innerDateText.trim(),
       surface: 'inner',
-      // Opposite the primary inscription center (working classic placement)
       angleRad: dateAngle,
       radius: innerR,
       sizeMm: Math.max(dateSizeMm, 1.25),
@@ -542,12 +692,11 @@ export async function buildTextLayout(
       angularDirection: -1,
     })
   }
-  if (params.outerText.trim() || params.outerTengwarKeys.trim()) {
+  if (hasOuter) {
     jobs.push({
       text: params.outerText.trim(),
       surface: 'outer',
-      // Same angular center as primary inner
-      angleRad: startAngle,
+      angleRad: sharedTextAngle,
       sizeMm,
       radius: outerR,
       font: primaryFont,
@@ -575,7 +724,9 @@ export async function buildTextLayout(
         job.surface,
         job.radius,
         job.angleRad,
-        job.angleRad - startAngle,
+        // Absolute world angle for displacement masks (must match bendOntoSurface).
+        // Do not store relative-to-textAngleDeg — wave snap would then re-center wrong.
+        job.angleRad,
         job.angularDirection,
         job.keysOverride,
         !!job.latinSafe,
@@ -606,9 +757,8 @@ export async function buildTextLayout(
 
 /**
  * Map layout-x onto cylinder angle.
- * Primary inner and outer inscriptions share the same angular direction. A
- * glyph projected radially through the band therefore reaches the inner wall
- * without being mirrored. The date explicitly passes its legacy -1 direction.
+ * The caller selects the reading direction for each inscription run. Inner
+ * text and the date use -1; outer text uses +1.
  */
 export function layoutXToWorldAngle(
   layoutX: number,
@@ -766,13 +916,13 @@ export async function engraveByDisplacement(
   const thickness = params.bandThicknessMm
   const outerR = innerR + thickness
   const depth = Math.min(params.textDepthMm, thickness * 0.75)
-  const baseAngle = (params.textAngleDeg * Math.PI) / 180
   const maxHalf = maxBandHalfExtentMm(params)
 
   const innerGroups = groupPolysByAngle(polys.filter((p) => p.surface === 'inner'))
   const outerGroups = groupPolysByAngle(polys.filter((p) => p.surface === 'outer'))
+  // angleOffsetRad is already absolute world angle from layout (pinch-safe on wave).
   for (const group of [...innerGroups, ...outerGroups]) {
-    group.angleOffsetRad = normalizeAngle(baseAngle + group.angleOffsetRad)
+    group.angleOffsetRad = normalizeAngle(group.angleOffsetRad)
   }
 
   const sample = new THREE.Vector2()
@@ -802,8 +952,8 @@ export async function engraveByDisplacement(
     // Flat layout y is relative to local section mid (glyphs centered on local width)
     const localY = v.z - edges.zMid
 
-    // Invert each run's bend direction. Primary inner and outer use +1; the
-    // date keeps its established -1 orientation.
+    // Invert each run's bend direction. Inner text and the date use -1;
+    // outer text uses +1.
     // Soft multi-sample catches thin Inter date strokes between mesh vertices.
     if (innerGroups.length && r >= innerRMin && r <= innerRMax) {
       let hit = false

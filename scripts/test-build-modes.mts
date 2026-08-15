@@ -46,6 +46,8 @@ function fixedParams(): RingParams {
     outerTengwarKeys: '',
     innerDateText: '27.09.2026',
     textAngleDeg: 0,
+    innerTextAngleDeg: 0,
+    dateAngleDeg: 90,
     textDepthMm: 0.35,
     dateTextSizeMm: 1.35,
     textSizeMm: 1.4,
@@ -55,11 +57,11 @@ function fixedParams(): RingParams {
   }
 }
 
-/** Sample band export mesh near date angle (π opposite start) for recessed r. */
+/** Sample band export mesh near the independent date angle for recessed r. */
 function countRecessedDateVerts(geom: THREE.BufferGeometry, params: RingParams): number {
   const innerR = params.innerDiameterMm / 2
   const depth = Math.min(params.textDepthMm, params.bandThicknessMm * 0.75)
-  const dateAngle = (params.textAngleDeg * Math.PI) / 180 + Math.PI
+  const dateAngle = (params.dateAngleDeg * Math.PI) / 180
   const pos = geom.getAttribute('position') as THREE.BufferAttribute
   let n = 0
   for (let i = 0; i < pos.count; i++) {
@@ -82,7 +84,9 @@ function countRecessedDateVerts(geom: THREE.BufferGeometry, params: RingParams):
 function countRecessedPrimaryVerts(geom: THREE.BufferGeometry, params: RingParams): number {
   const innerR = params.innerDiameterMm / 2
   const depth = Math.min(params.textDepthMm, params.bandThicknessMm * 0.75)
-  const primaryAngle = (params.textAngleDeg * Math.PI) / 180
+  const primaryAngle =
+    ((params.bandProfile === 'd' ? params.innerTextAngleDeg : params.textAngleDeg) * Math.PI) /
+    180
   const pos = geom.getAttribute('position') as THREE.BufferAttribute
   let n = 0
   for (let i = 0; i < pos.count; i++) {
@@ -111,6 +115,24 @@ function assertFiniteGeometry(geometry: THREE.BufferGeometry, label: string): vo
       `${label} position ${i} is finite`,
     )
   }
+}
+
+function geometryCenterAngle(geometry: THREE.BufferGeometry): number {
+  const position = geometry.getAttribute('position') as THREE.BufferAttribute
+  let x = 0
+  let y = 0
+  for (let i = 0; i < position.count; i++) {
+    const px = position.getX(i)
+    const py = position.getY(i)
+    const radius = Math.hypot(px, py)
+    x += px / radius
+    y += py / radius
+  }
+  return Math.atan2(y, x)
+}
+
+function angularDistanceRad(a: number, b: number): number {
+  return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)))
 }
 
 function countInkMeshes(ring: ReturnType<typeof buildBlankRing>): number {
@@ -184,7 +206,7 @@ async function main(): Promise<void> {
   assert(previewPrimaryRecess > 0, 'preview primary inscription recesses in metal')
   assertFiniteGeometry(preview.exportMesh.geometry, 'preview band')
 
-  const { layoutXToWorldAngle } = await import('../src/textEngraving.ts')
+  const { buildTextLayout, layoutXToWorldAngle } = await import('../src/textEngraving.ts')
   const directionStart = 0.4
   const layoutX = 1.25
   const innerRadius = params.innerDiameterMm / 2
@@ -195,10 +217,86 @@ async function main(): Promise<void> {
     (layoutXToWorldAngle(layoutX, outerRadius, directionStart) - directionStart) * outerRadius
   const dateArc =
     (layoutXToWorldAngle(layoutX, innerRadius, directionStart, -1) - directionStart) * innerRadius
-  assert(Math.abs(innerArc - layoutX) < 1e-9, 'inner text keeps source reading direction')
+  assert(Math.abs(innerArc - layoutX) < 1e-9, 'forward text direction maps to positive arc')
   assert(Math.abs(outerArc - layoutX) < 1e-9, 'outer text keeps source reading direction')
-  assert(Math.sign(innerArc) === Math.sign(outerArc), 'inner and outer text are not mirrored')
+  assert(Math.sign(innerArc) === Math.sign(outerArc), 'forward runs are not mirrored')
   assert(Math.abs(dateArc + layoutX) < 1e-9, 'date keeps its established reading direction')
+
+  const waveInnerLayout = await buildTextLayout({
+    ...DEFAULT_PARAMS,
+    innerText: 'test',
+    innerDateText: '',
+    outerText: '',
+    quality: 'draft',
+  })
+  const waveInnerPolys = waveInnerLayout?.polys.filter((poly) => poly.surface === 'inner') ?? []
+  assert(waveInnerPolys.length > 0, 'wave inner-direction probe produces engraving masks')
+  assert(
+    waveInnerPolys.every((poly) => poly.angularDirection === -1),
+    'wave inner text reads in the same direction as the date',
+  )
+  waveInnerLayout?.dateCutter?.dispose()
+  for (const geometry of waveInnerLayout?.previewGeometries ?? []) geometry.dispose()
+
+  const classicInnerLayout = await buildTextLayout({
+    ...DEFAULT_PARAMS,
+    bandProfile: 'd',
+    innerText: 'test',
+    innerDateText: '',
+    outerText: 'outer',
+    innerTextAngleDeg: 35,
+    textAngleDeg: 145,
+    quality: 'draft',
+  })
+  const classicInnerPolys =
+    classicInnerLayout?.polys.filter((poly) => poly.surface === 'inner') ?? []
+  const classicOuterPolys =
+    classicInnerLayout?.polys.filter((poly) => poly.surface === 'outer') ?? []
+  assert(classicInnerPolys.length > 0, 'classic-D inner-direction probe produces engraving masks')
+  assert(
+    classicInnerPolys.every(
+      (poly) =>
+        poly.angularDirection === -1 &&
+        angularDistanceRad(poly.angleOffsetRad, (35 * Math.PI) / 180) < 1e-9,
+    ),
+    'classic-D inner text reads like the date at its independent position',
+  )
+  assert(classicOuterPolys.length > 0, 'classic-D outer-position probe produces masks')
+  assert(
+    classicOuterPolys.every(
+      (poly) =>
+        poly.angularDirection === 1 &&
+        angularDistanceRad(poly.angleOffsetRad, (145 * Math.PI) / 180) < 1e-9,
+    ),
+    'classic-D outer text retains its independent position and direction',
+  )
+  classicInnerLayout?.dateCutter?.dispose()
+  for (const geometry of classicInnerLayout?.previewGeometries ?? []) geometry.dispose()
+
+  // Date position must remain continuous through the wave pinch sector. This
+  // catches both safety snapping and a cache key that omits dateAngleDeg.
+  const dateProbeBase = {
+    ...DEFAULT_PARAMS,
+    innerText: '',
+    innerDateText: '27.09.2026',
+    quality: 'draft' as const,
+  }
+  const dateLayout30 = await buildTextLayout({ ...dateProbeBase, dateAngleDeg: 30 })
+  const dateLayout60 = await buildTextLayout({ ...dateProbeBase, dateAngleDeg: 60 })
+  assert(dateLayout30?.dateCutter, '30° date-position probe has a cutter')
+  assert(dateLayout60?.dateCutter, '60° date-position probe has a cutter')
+  const actualDateMovement = angularDistanceRad(
+    geometryCenterAngle(dateLayout60.dateCutter),
+    geometryCenterAngle(dateLayout30.dateCutter),
+  )
+  assert(
+    Math.abs(actualDateMovement - Math.PI / 6) < 1e-4,
+    'date position moves by the requested 30° inside the pinch sector',
+  )
+  for (const layout of [dateLayout30, dateLayout60]) {
+    layout.dateCutter?.dispose()
+    for (const geometry of layout.previewGeometries) geometry.dispose()
+  }
 
   // --- Real first-load text, then selected-quality viewport from cached layout ---
   const defaultPreviewParams = {

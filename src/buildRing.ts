@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { getBlankBandGeometry } from './buildCache'
+import { edgeSpanDegs } from './ringGeometry'
 import type { TextLayout } from './textEngraving'
 import type { RingParams } from './types'
 import { METAL_COLORS } from './types'
@@ -84,7 +85,22 @@ function throwIfCancelled(isCancelled: () => boolean): void {
 
 function makeCutawayPlane(params: RingParams): THREE.Plane | null {
   if (!params.cutaway) return null
-  const angle = (params.textAngleDeg * Math.PI) / 180
+  // Face the primary inner inscription when present. D-shaped inner text has
+  // its own position; wave text may be parked on the flat arc below.
+  const hasInnerText = !!(params.innerText.trim() || params.innerTengwarKeys.trim())
+  const preferredAngleDeg =
+    params.bandProfile === 'd' && hasInnerText
+      ? params.innerTextAngleDeg
+      : params.textAngleDeg
+  let angle = (preferredAngleDeg * Math.PI) / 180
+  if (params.bandProfile === 'wave' && params.waveAmplitudeMm > params.bandWidthMm) {
+    const phase = (params.wavePhaseDeg * Math.PI) / 180
+    const maxSpan = edgeSpanDegs(params).maxDeg
+    const half = ((Math.min(170, maxSpan / 2 + 8) * Math.PI) / 180)
+    let d = angle - phase
+    d = Math.atan2(Math.sin(d), Math.cos(d))
+    if (Math.abs(d) < half) angle = phase + Math.PI
+  }
   return new THREE.Plane(new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0), 0)
 }
 

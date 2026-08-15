@@ -4,6 +4,8 @@ import {
   bandEdgesAt,
   maxBandHalfExtentMm,
   measurePinchFlankPaths,
+  pinchLayoutFromParams,
+  pinchThetaAtU,
   type PinchFlankPath,
 } from './ringGeometry'
 import type { RingParams } from './types'
@@ -12,7 +14,7 @@ export interface RingMeasurements {
   innerDiameterMm: number
   outerDiameterMm: number
   bandThicknessMm: number
-  /** Nominal / local axial band width (constant along θ for current wave model). */
+  /** Nominal axial band width on the untouched part of the ring. */
   bandWidthMm: number
   /**
    * Full axial extent through the pinch sector: max(zTop) − min(zBot).
@@ -20,7 +22,7 @@ export interface RingMeasurements {
    * metal at the pinch” envelope).
    */
   pinchEnvelopeMm: number
-  /** Local band width sampled at the pinch center. */
+  /** True cross-section width at the broader approach shoulder. */
   pinchLocalWidthMm: number
   /** Crest z of the upper edge inside the pinch. */
   pinchZMaxMm: number
@@ -53,6 +55,13 @@ export interface RingMeasurements {
   /** Sampled polylines for drawing flank dimensions. */
   topFlankPath: PinchFlankPath
   botFlankPath: PinchFlankPath
+  /** Red construction control value shown at the lower pinch corner. */
+  pinchAngleDeg: number
+  thetaTakeoff: number
+  thetaCrest: number
+  thetaWaist: number
+  thetaTrough: number
+  thetaBotStart: number
   pinchPhaseDeg: number
   isWave: boolean
 }
@@ -73,35 +82,53 @@ export function measureRing(params: RingParams): RingMeasurements {
   let pinchLocalWidth = params.bandWidthMm
   let midExcursion = 0
 
-  const fallback = params.waveSpanDeg || 100
-  const topSpanDeg = isWave ? clampEdgeSpanDeg(params.waveTopSpanDeg, fallback) : 0
-  const botSpanDeg = isWave ? clampEdgeSpanDeg(params.waveBotSpanDeg, fallback) : 0
+  const layout = isWave ? pinchLayoutFromParams(params) : null
+  const fallback = params.waveSpanDeg || 120
+  const topSpanDeg =
+    isWave && layout && layout.spanDeg > 0
+      ? clampEdgeSpanDeg(layout.spanDeg, fallback)
+      : 0
+  const botSpanDeg = topSpanDeg
   const maxSpanDeg = Math.max(topSpanDeg, botSpanDeg)
   // Outer-circumference arc length for each edge window
   const topSpanMm = isWave ? outerR * ((topSpanDeg * Math.PI) / 180) : 0
   const botSpanMm = isWave ? outerR * ((botSpanDeg * Math.PI) / 180) : 0
 
   const flanks =
-    isWave && params.waveAmplitudeMm > 0
+    isWave && params.waveAmplitudeMm > params.bandWidthMm
       ? measurePinchFlankPaths(params)
       : {
           top: { lengthMm: 0, points: [], mid: { x: 0, y: 0, z: 0 } },
           bot: { lengthMm: 0, points: [], mid: { x: 0, y: 0, z: 0 } },
         }
 
-  if (isWave && params.waveAmplitudeMm > 0 && maxSpanDeg > 0) {
+  if (isWave && layout && layout.spanRad > 0) {
     const phase = (params.wavePhaseDeg * Math.PI) / 180
-    const span = (maxSpanDeg * Math.PI) / 180
-    const n = 96
+    const span = layout.spanRad
+    const n = 1536
     for (let i = 0; i <= n; i++) {
       const u = i / n
       const θ = phase - span / 2 + u * span
       const e = bandEdgesAt(θ, params)
       pinchZMax = Math.max(pinchZMax, e.zTop)
       pinchZMin = Math.min(pinchZMin, e.zBot)
-      pinchLocalWidth = e.width
       midExcursion = Math.max(midExcursion, Math.abs(e.zMid))
     }
+    for (const u of [
+      layout.shoulderU,
+      layout.crestU,
+      layout.waistU,
+      layout.troughU,
+    ]) {
+      const e = bandEdgesAt(phase - span / 2 + u * span, params)
+      pinchZMax = Math.max(pinchZMax, e.zTop)
+      pinchZMin = Math.min(pinchZMin, e.zBot)
+      midExcursion = Math.max(midExcursion, Math.abs(e.zMid))
+    }
+    pinchLocalWidth = bandEdgesAt(
+      phase - span / 2 + layout.shoulderU * span,
+      params,
+    ).width
   } else {
     const e = bandEdgesAt(0, params)
     pinchZMax = e.zTop
@@ -129,6 +156,22 @@ export function measureRing(params: RingParams): RingMeasurements {
     pinchBotFlankMm: flanks.bot.lengthMm,
     topFlankPath: flanks.top,
     botFlankPath: flanks.bot,
+    pinchAngleDeg: layout?.requestedAngleDeg ?? 0,
+    thetaTakeoff: layout
+      ? pinchThetaAtU(params.wavePhaseDeg, layout.spanRad, layout.takeoffU)
+      : 0,
+    thetaCrest: layout
+      ? pinchThetaAtU(params.wavePhaseDeg, layout.spanRad, layout.crestU)
+      : 0,
+    thetaWaist: layout
+      ? pinchThetaAtU(params.wavePhaseDeg, layout.spanRad, layout.waistU)
+      : 0,
+    thetaTrough: layout
+      ? pinchThetaAtU(params.wavePhaseDeg, layout.spanRad, layout.troughU)
+      : 0,
+    thetaBotStart: layout
+      ? pinchThetaAtU(params.wavePhaseDeg, layout.spanRad, layout.botStartU)
+      : 0,
     pinchPhaseDeg: isWave ? params.wavePhaseDeg : 0,
     isWave,
   }
@@ -237,6 +280,9 @@ export class DimensionOverlay {
       params.waveSpanDeg,
       params.waveTopSpanDeg,
       params.waveBotSpanDeg,
+      params.waveTopFlankMm,
+      params.waveBotFlankMm,
+      params.wavePinchAngleDeg,
       params.waveSharpness,
     ])
     if (key === this.lastKey) return m
@@ -350,7 +396,7 @@ export class DimensionOverlay {
     }
 
     // ── Pinch sector annotations ────────────────────────────────────────────
-    if (m.isWave && params.waveAmplitudeMm > 0 && m.pinchSpanDeg > 0) {
+    if (m.isWave && m.pinchSpanDeg > 0) {
       const cos = Math.cos(pinchAngle)
       const sin = Math.sin(pinchAngle)
       const rDim = outerR + 2.4
@@ -380,13 +426,17 @@ export class DimensionOverlay {
         ),
       )
 
-      // Witness lines from metal edges out to the dimension
-      const eCenter = bandEdgesAt(pinchAngle, params)
-      const rMetal = outerR
+      // Witness lines from the actual crest and trough out to the envelope.
+      const eCrest = bandEdgesAt(m.thetaCrest, params)
+      const eTrough = bandEdgesAt(m.thetaTrough, params)
       this.group.add(
         makeLine(
           [
-            new THREE.Vector3(cos * rMetal, sin * rMetal, eCenter.zTop),
+            new THREE.Vector3(
+              Math.cos(m.thetaCrest) * outerR,
+              Math.sin(m.thetaCrest) * outerR,
+              eCrest.zTop,
+            ),
             new THREE.Vector3(cos * rDim, sin * rDim, zMax),
           ],
           0xffb84d,
@@ -395,7 +445,11 @@ export class DimensionOverlay {
       this.group.add(
         makeLine(
           [
-            new THREE.Vector3(cos * rMetal, sin * rMetal, eCenter.zBot),
+            new THREE.Vector3(
+              Math.cos(m.thetaTrough) * outerR,
+              Math.sin(m.thetaTrough) * outerR,
+              eTrough.zBot,
+            ),
             new THREE.Vector3(cos * rDim, sin * rDim, zMin),
           ],
           0xffb84d,
@@ -409,27 +463,59 @@ export class DimensionOverlay {
       envLab.position.set(cos * (rDim + 0.35), sin * (rDim + 0.35), (zMax + zMin) / 2)
       this.group.add(envLab)
 
-      // Local band width at pinch center (metal thickness along finger axis)
+      // True 3.70 mm width across the marked approach shoulder, measured
+      // normal to the S centerline.
       const rLocal = outerR + 1.35
-      const lt = new THREE.Vector3(cos * rLocal, sin * rLocal, eCenter.zTop)
-      const lb = new THREE.Vector3(cos * rLocal, sin * rLocal, eCenter.zBot)
+      const layout = pinchLayoutFromParams(params)
+      const bridgeAngle = pinchThetaAtU(
+        params.wavePhaseDeg,
+        layout.spanRad,
+        layout.shoulderU,
+      )
+      const bridgeCos = Math.cos(bridgeAngle)
+      const bridgeSin = Math.sin(bridgeAngle)
+      const bridgeEdge = bandEdgesAt(bridgeAngle, params)
+      const topQ = bridgeEdge.normalCenterShift + bridgeEdge.halfW
+      const botQ = bridgeEdge.normalCenterShift - bridgeEdge.halfW
+      const topWidthAngle = Math.asin(
+        Math.max(
+          -0.999,
+          Math.min(0.999, (topQ * bridgeEdge.normalS) / rLocal),
+        ),
+      )
+      const botWidthAngle = Math.asin(
+        Math.max(
+          -0.999,
+          Math.min(0.999, (botQ * bridgeEdge.normalS) / rLocal),
+        ),
+      )
+      const lt = new THREE.Vector3(
+        Math.cos(bridgeAngle + topWidthAngle) * rLocal,
+        Math.sin(bridgeAngle + topWidthAngle) * rLocal,
+        bridgeEdge.zTop,
+      )
+      const lb = new THREE.Vector3(
+        Math.cos(bridgeAngle + botWidthAngle) * rLocal,
+        Math.sin(bridgeAngle + botWidthAngle) * rLocal,
+        bridgeEdge.zBot,
+      )
       this.group.add(makeLine([lt, lb], ACCENT))
       const localLab = makeLabel(
-        `<span class="dim-name">Local width</span><span class="dim-val">${fmtMm(m.pinchLocalWidthMm)}</span>`,
+        `<span class="dim-name">Shoulder width</span><span class="dim-val">${fmtMm(m.pinchLocalWidthMm)}</span>`,
         'dim-label dim-label-accent',
       )
       localLab.position.set(
-        cos * (rLocal + 0.15),
-        sin * (rLocal + 0.15),
-        eCenter.zMid,
+        bridgeCos * (rLocal + 0.15),
+        bridgeSin * (rLocal + 0.15),
+        bridgeEdge.zMid,
       )
       this.group.add(localLab)
 
       // ── Steep S-flank path lengths (the two parallel Z diagonals) ─────────
       // Drawn on the outer metal surface — these are the edges the user marks
       // as the pinch “sides”, measured as true 3D path length in mm.
-      const FLANK_TOP_COLOR = 0xff4d4d
-      const FLANK_BOT_COLOR = 0xff6b4d
+      const FLANK_TOP_COLOR = 0x7dff3d
+      const FLANK_BOT_COLOR = 0x2454ff
 
       const drawFlank = (
         path: PinchFlankPath,
@@ -485,80 +571,70 @@ export class DimensionOverlay {
         1.35,
       )
 
-      // Secondary: full window arc (how far around the ring each edge runs)
-      const topSpan = m.pinchTopSpanDeg
-      const botSpan = m.pinchBotSpanDeg
-      const addSpanArc = (
-        spanDeg: number,
-        spanMm: number,
-        zArc: number,
-        arcR: number,
-        color: number,
-        name: string,
-        labelClass: string,
-      ): void => {
-        const spanRad = (spanDeg * Math.PI) / 180
-        const half = spanRad / 2
-        const steps = Math.max(16, Math.ceil(spanDeg / 4))
-        const pts: THREE.Vector3[] = []
-        for (let i = 0; i <= steps; i++) {
-          const u = i / steps
-          const θ = pinchAngle - half + u * spanRad
-          pts.push(new THREE.Vector3(Math.cos(θ) * arcR, Math.sin(θ) * arcR, zArc))
-        }
-        this.group.add(makeLine(pts, color))
-        for (const θ of [pinchAngle - half, pinchAngle + half]) {
-          const c = Math.cos(θ)
-          const s = Math.sin(θ)
-          this.group.add(
-            makeLine(
-              [
-                new THREE.Vector3(c * (arcR - 0.45), s * (arcR - 0.45), zArc),
-                new THREE.Vector3(c * (arcR + 0.45), s * (arcR + 0.45), zArc),
-              ],
-              color,
-            ),
-          )
-        }
-        const lab = makeLabel(
-          `<span class="dim-name">${name}</span><span class="dim-val">${fmtMm(spanMm)} · ${fmtDeg(spanDeg)}</span>`,
-          labelClass,
+      // Red construction angle in the opening requested by the drawing. Place
+      // it at the inside of the lower-edge trough so the angle reads in the
+      // negative space between the two branches, not outside the ring.
+      const edgeSurfacePoint = (theta: number, edgeName: 'top' | 'bot'): THREE.Vector3 => {
+        const edge = bandEdgesAt(theta, params)
+        const side = edgeName === 'top' ? 1 : -1
+        const r = outerR - params.bandThicknessMm * 0.62
+        const edgeQ = edge.normalCenterShift + side * edge.halfW
+        const angleOffset = Math.asin(
+          Math.max(
+            -0.999,
+            Math.min(0.999, (edgeQ * edge.normalS) / r),
+          ),
         )
-        lab.position.set(
-          Math.cos(pinchAngle) * (arcR + 0.15),
-          Math.sin(pinchAngle) * (arcR + 0.15),
-          zArc + 0.5,
+        const z = edgeName === 'top' ? edge.zTop : edge.zBot
+        return new THREE.Vector3(
+          Math.cos(theta + angleOffset) * r,
+          Math.sin(theta + angleOffset) * r,
+          z,
         )
-        this.group.add(lab)
       }
-
-      addSpanArc(
-        topSpan,
-        m.pinchTopSpanMm,
-        zMax + 1.15,
-        outerR + 3.4,
-        0x9ecbff,
-        'Upper window',
-        'dim-label dim-label-angle',
+      const angleVertex = edgeSurfacePoint(m.thetaTrough, 'bot')
+      const incoming = edgeSurfacePoint(m.thetaWaist, 'bot')
+      const outgoing = edgeSurfacePoint(
+        pinchThetaAtU(
+          params.wavePhaseDeg,
+          pinchLayoutFromParams(params).spanRad,
+          pinchLayoutFromParams(params).landingU,
+        ),
+        'bot',
       )
-      addSpanArc(
-        botSpan,
-        m.pinchBotSpanMm,
-        zMin - 1.15,
-        outerR + (Math.abs(topSpan - botSpan) < 0.5 ? 3.4 : 3.9),
-        0xc4a8ff,
-        'Lower window',
-        'dim-label dim-label-edge-bot',
+      const red = 0xff3f2e
+      this.group.add(makeLine([angleVertex, incoming], red))
+      this.group.add(makeLine([angleVertex, outgoing], red))
+      const rayA = incoming.clone().sub(angleVertex).normalize()
+      const rayB = outgoing.clone().sub(angleVertex).normalize()
+      const arcPts: THREE.Vector3[] = []
+      for (let i = 0; i <= 20; i++) {
+        const t = i / 20
+        const ray = rayA.clone().multiplyScalar(1 - t).addScaledVector(rayB, t).normalize()
+        arcPts.push(angleVertex.clone().addScaledVector(ray, 1.05))
+      }
+      this.group.add(makeLine(arcPts, red))
+      const angleAnchor = arcPts[Math.floor(arcPts.length / 2)]!
+      const angleRadius = Math.hypot(angleAnchor.x, angleAnchor.y) || 1
+      const angleLab = makeLabel(
+        `<span class="dim-name">Pinch angle</span><span class="dim-val">${fmtDeg(m.pinchAngleDeg)}</span>`,
+        'dim-label dim-label-corner',
       )
+      angleLab.position.set(
+        angleAnchor.x - (angleAnchor.x / angleRadius) * 1.05,
+        angleAnchor.y - (angleAnchor.y / angleRadius) * 1.05,
+        angleAnchor.z - 0.2,
+      )
+      this.group.add(angleLab)
 
-      // Amplitude callout at crest
+      // Maximum centerline displacement inside the localized S.
       if (m.pinchMidExcursionMm > 0.05) {
         const ampLab = makeLabel(
           `<span class="dim-name">Mid shift max</span><span class="dim-val">${fmtMm(m.pinchMidExcursionMm)}</span>`,
         )
         ampLab.position.set(
-          cos * (outerR * 0.55),
-          sin * (outerR * 0.55),
+          Math.cos(m.thetaCrest) * (outerR * 0.55),
+          Math.sin(m.thetaCrest) * (outerR * 0.55),
           zMax + 0.7,
         )
         this.group.add(ampLab)
