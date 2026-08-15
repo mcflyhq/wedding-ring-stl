@@ -891,7 +891,9 @@ function bendDateCutter(
   return geom
 }
 
-const YIELD_EVERY_VERTS = 4_000
+// Keep high/extra-quality inscription carving below the 150 ms long-task
+// ceiling on slower CI-class CPUs as well as local development machines.
+const YIELD_EVERY_VERTS = 2_500
 
 function yieldToMain(): Promise<void> {
   return new Promise((r) => setTimeout(r, 0))
